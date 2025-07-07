@@ -1,12 +1,79 @@
 import copy
 from constants import SQUARE_SIZE
 from animations import Animation, ParticleSystem, CheckmateAnimation
+import chess
+import chess.engine
 
 class ChessGame:
-    def __init__(self, sounds):
+    def __init__(self, sounds, game_mode="2V2", stockfish_path="stockfish"):
         self.sounds = sounds
+        self.game_mode = game_mode  # "2V2" or "AI"
+        self.stockfish_path = stockfish_path
+        self.engine = None
         self.reset_game()
-        
+        if self.game_mode == "AI":
+            self.start_engine()
+
+    def start_engine(self):
+        try:
+            self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
+        except Exception as e:
+            print("Could not start Stockfish:", e)
+            self.engine = None
+
+    def close_engine(self):
+        if self.engine:
+            self.engine.quit()
+            self.engine = None
+
+    def get_chess_board(self):
+        # Convert your board to FEN
+        rows = []
+        for row in self.board:
+            fen_row = ""
+            empty = 0
+            for cell in row:
+                if cell == "":
+                    empty += 1
+                else:
+                    if empty > 0:
+                        fen_row += str(empty)
+                        empty = 0
+                    piece = cell[1]
+                    color = cell[0]
+                    symbol = piece.upper() if color == "w" else piece.lower()
+                    fen_row += symbol
+            if empty > 0:
+                fen_row += str(empty)
+            rows.append(fen_row)
+        fen = "/".join(rows)
+        fen += " " + ("w" if self.turn == "w" else "b") + " - - 0 1"
+        return chess.Board(fen)
+
+    def make_ai_move(self, time_limit=0.1):
+        if not self.engine:
+            self.start_engine()
+        if not self.engine:
+            print("AI move unavailable: Stockfish engine could not be started.\n"
+                  "Please ensure the Stockfish binary is present, named 'stockfish', and executable in the project directory.\n"
+                  "See the README or setup instructions for help.")
+            return
+        board = self.get_chess_board()
+        try:
+            result = self.engine.play(board, chess.engine.Limit(time=time_limit))
+            move = result.move
+            # Convert move to your coordinates
+            start_col = ord(str(move)[0]) - ord('a')
+            start_row = 8 - int(str(move)[1])
+            end_col = ord(str(move)[2]) - ord('a')
+            end_row = 8 - int(str(move)[3])
+            self.selected_piece = (start_row, start_col)
+            self.move_piece(end_row, end_col)
+        except Exception as e:
+            print(f"Error during AI move: {e}\n"
+                  "Check that Stockfish is working and compatible with your system.")
+            return
+
     def reset_game(self):
         # Initialize board with starting position
         self.board = [
