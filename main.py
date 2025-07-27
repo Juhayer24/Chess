@@ -6,6 +6,7 @@ from constants import FPS
 from models import ChessGame
 from ui import draw_board, draw_sidebar, draw_score_screen
 from utils import setup_window, create_piece_surfaces, initialize_sounds
+from ai import ChessAI
 
 def draw_mode_selection(window, font):
     """Draw an elegant game mode selection screen"""
@@ -52,8 +53,10 @@ def draw_mode_selection(window, font):
     # Button dimensions and positions
     btn_width, btn_height = 380, 85
     center_x = window.get_width() // 2
-    btn_classic = pygame.Rect(center_x - btn_width // 2, 200, btn_width, btn_height)
-    btn_challenge = pygame.Rect(center_x - btn_width // 2, 320, btn_width, btn_height)
+    btn_classic = pygame.Rect(center_x - btn_width // 2, 180, btn_width, btn_height)
+    btn_easy = pygame.Rect(center_x - btn_width // 2, 280, btn_width, btn_height)
+    btn_medium = pygame.Rect(center_x - btn_width // 2, 380, btn_width, btn_height)
+    btn_hard = pygame.Rect(center_x - btn_width // 2, 480, btn_width, btn_height)
     
     mouse_pos = pygame.mouse.get_pos()
     
@@ -124,23 +127,41 @@ def draw_mode_selection(window, font):
     )
     
     draw_premium_button(
-        btn_challenge,
+        btn_easy,
+        primary_color=(34, 139, 34),   # Forest green
+        accent_color=(50, 205, 50),    # Lime green
+        text="AI Easy",
+        description="Beginner Level (Depth 2)",
+        icon_char="🤖"
+    )
+    
+    draw_premium_button(
+        btn_medium,
+        primary_color=(255, 140, 0),   # Dark orange
+        accent_color=(255, 165, 0),    # Orange
+        text="AI Medium",
+        description="Intermediate Level (Depth 3)",
+        icon_char="⚡"
+    )
+    
+    draw_premium_button(
+        btn_hard,
         primary_color=(220, 20, 60),   # Crimson
         accent_color=(255, 69, 0),     # Red orange
-        text="AI Challenge",
-        description="Human vs Computer",
-        icon_char="⚡"
+        text="AI Hard",
+        description="Expert Level (Depth 4)",
+        icon_char="🔥"
     )
     
     # Footer text
     footer_font = pygame.font.SysFont("segoeui", 16)
-    footer_text = "Press ESC to exit • R to restart game • S for statistics"
+    footer_text = "Press ESC to exit • R to restart game • S for statistics • U to undo"
     footer_surface = footer_font.render(footer_text, True, (120, 120, 120))
     footer_x = window.get_width() // 2 - footer_surface.get_width() // 2
     window.blit(footer_surface, (footer_x, window.get_height() - 40))
     
     pygame.display.update()
-    return btn_classic, btn_challenge
+    return btn_classic, btn_easy, btn_medium, btn_hard
 
 def main():
     # Initialize pygame
@@ -161,12 +182,14 @@ def main():
     show_score_screen = False
     game = None
     game_mode = None
+    ai_player = None
+    ai_depth = 3
     font = pygame.font.SysFont("segoeui", 36, bold=True)
     
     # --- Game mode selection screen ---
     selecting_mode = True
     while selecting_mode:
-        btn_classic, btn_challenge = draw_mode_selection(window, font)
+        btn_classic, btn_easy, btn_medium, btn_hard = draw_mode_selection(window, font)
         for event in pygame.event.get():
             if event.type == QUIT:
                 pygame.quit()
@@ -178,9 +201,22 @@ def main():
             if event.type == MOUSEBUTTONDOWN:
                 if btn_classic.collidepoint(event.pos):
                     game_mode = "2V2"
+                    ai_player = None
                     selecting_mode = False
-                elif btn_challenge.collidepoint(event.pos):
+                elif btn_easy.collidepoint(event.pos):
                     game_mode = "AI"
+                    ai_depth = 2
+                    ai_player = ChessAI(depth=ai_depth)
+                    selecting_mode = False
+                elif btn_medium.collidepoint(event.pos):
+                    game_mode = "AI"
+                    ai_depth = 3
+                    ai_player = ChessAI(depth=ai_depth)
+                    selecting_mode = False
+                elif btn_hard.collidepoint(event.pos):
+                    game_mode = "AI"
+                    ai_depth = 4
+                    ai_player = ChessAI(depth=ai_depth)
                     selecting_mode = False
         clock.tick(60)  # Smoother animation
     
@@ -189,6 +225,7 @@ def main():
     
     # Main game loop
     running = True
+    ai_thinking = False
     while running:
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -202,12 +239,17 @@ def main():
                 if event.key == K_r:
                     game.reset_game()
                     show_score_screen = False
+                    ai_thinking = False
                 if event.key == K_s:
                     show_score_screen = not show_score_screen
                 if event.key == K_u:
                     if game.undo_move():
                         game.play_sound("move")
-            if event.type == MOUSEBUTTONDOWN and not show_score_screen:
+                        ai_thinking = False
+                        # If in AI mode and it's now human's turn, undo one more move
+                        if game_mode == "AI" and game.turn == 'b':
+                            game.undo_move()
+            if event.type == MOUSEBUTTONDOWN and not show_score_screen and not ai_thinking:
                 if event.button == 1:  # Left click
                     x, y = event.pos
                     # Only process clicks on the board
@@ -215,19 +257,41 @@ def main():
                         col = x // 80  # SQUARE_SIZE
                         row = y // 80  # SQUARE_SIZE
                         moved = game.select_piece(row, col)
-                        # If in AI mode and human just moved, let AI play if it's AI's turn and game not over
-                        if game_mode == "AI" and not game.game_over and game.turn == 'b':
-                            pygame.time.wait(400)  # Small delay for realism
-                            game.make_ai_move()
+                        
+                        # If in AI mode and human just moved, trigger AI move
+                        if game_mode == "AI" and moved and not game.game_over and game.turn == 'b':
+                            ai_thinking = True
+
+        # Handle AI move
+        if game_mode == "AI" and ai_player and game.turn == 'b' and not game.game_over and ai_thinking:
+            # Get AI move
+            ai_move = ai_player.get_best_move(game)
+            
+            if ai_move:
+                from_row, from_col, to_row, to_col = ai_move
+                # Set the selected piece and make the move
+                game.selected_piece = (from_row, from_col)
+                game.move_piece(to_row, to_col)
+            
+            ai_thinking = False
+
         # Clear screen
         from constants import PANEL_BG
         window.fill(PANEL_BG)
+        
         # Draw the game
         draw_board(window, game, pieces)
         if show_score_screen:
             draw_score_screen(window, game, pieces)
         else:
             draw_sidebar(window, game, pieces)
+            
+        # Show AI thinking indicator
+        if ai_thinking:
+            thinking_font = pygame.font.SysFont("segoeui", 24, bold=True)
+            thinking_text = thinking_font.render("AI is thinking...", True, (255, 255, 0))
+            window.blit(thinking_text, (650, 100))
+        
         # Update display
         pygame.display.update()
         clock.tick(FPS)
