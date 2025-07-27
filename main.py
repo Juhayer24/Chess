@@ -271,6 +271,7 @@ def main():
                 from_row, from_col, to_row, to_col = ai_move
                 # Set the selected piece and make the move
                 game.selected_piece = (from_row, from_col)
+                game.valid_moves = game.get_valid_moves(from_row, from_col)
                 game.move_piece(to_row, to_col)
             
             ai_thinking = False
