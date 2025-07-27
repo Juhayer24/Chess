@@ -1,5 +1,6 @@
 import pygame
 import os
+import time
 from constants import SQUARE_SIZE, WHITE, BLACK
 
 # Font setup with fallbacks
@@ -24,6 +25,9 @@ def initialize_sounds():
         # Initialize sound files here if they exist
         # Example:
         # SOUNDS["move"] = pygame.mixer.Sound("sounds/move.wav")
+        # SOUNDS["capture"] = pygame.mixer.Sound("sounds/capture.wav")
+        # SOUNDS["check"] = pygame.mixer.Sound("sounds/check.wav")
+        # SOUNDS["checkmate"] = pygame.mixer.Sound("sounds/checkmate.wav")
     except:
         pass  # No sound support
     
@@ -151,7 +155,7 @@ def setup_window():
     
     # Create window
     window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-    pygame.display.set_caption("Advanced Chess")
+    pygame.display.set_caption("Advanced Chess with AI")
     
     # Try to set an icon
     try:
@@ -167,3 +171,217 @@ def setup_window():
         pass  # Skip if setting icon fails
     
     return window
+
+# AI-related utility functions
+def format_move_for_display(move):
+    """Convert a move tuple to readable chess notation"""
+    if not move:
+        return "No move"
+    
+    from_pos, to_pos = move
+    from_col = chr(ord('a') + from_pos[1])
+    from_row = str(8 - from_pos[0])
+    to_col = chr(ord('a') + to_pos[1])
+    to_row = str(8 - to_pos[0])
+    
+    return f"{from_col}{from_row} → {to_col}{to_row}"
+
+def get_difficulty_color(difficulty):
+    """Get color scheme for difficulty levels"""
+    colors = {
+        'Easy': {
+            'bg': (34, 139, 34),      # Forest Green
+            'hover': (50, 205, 50),   # Lime Green
+            'text': WHITE
+        },
+        'Medium': {
+            'bg': (255, 140, 0),      # Orange
+            'hover': (255, 165, 0),   # Orange Red
+            'text': WHITE
+        },
+        'Hard': {
+            'bg': (220, 20, 20),      # Crimson
+            'hover': (255, 69, 69),   # Red
+            'text': WHITE
+        },
+        'Classic': {
+            'bg': (70, 130, 180),     # Steel Blue
+            'hover': (100, 149, 237), # Cornflower Blue
+            'text': WHITE
+        }
+    }
+    return colors.get(difficulty, colors['Classic'])
+
+def create_gradient_surface(width, height, color1, color2, vertical=True):
+    """Create a gradient surface between two colors"""
+    surface = pygame.Surface((width, height))
+    
+    if vertical:
+        for y in range(height):
+            ratio = y / height
+            r = int(color1[0] * (1 - ratio) + color2[0] * ratio)
+            g = int(color1[1] * (1 - ratio) + color2[1] * ratio)
+            b = int(color1[2] * (1 - ratio) + color2[2] * ratio)
+            pygame.draw.line(surface, (r, g, b), (0, y), (width, y))
+    else:
+        for x in range(width):
+            ratio = x / width
+            r = int(color1[0] * (1 - ratio) + color2[0] * ratio)
+            g = int(color1[1] * (1 - ratio) + color2[1] * ratio)
+            b = int(color1[2] * (1 - ratio) + color2[2] * ratio)
+            pygame.draw.line(surface, (r, g, b), (x, 0), (x, height))
+    
+    return surface
+
+def draw_thinking_animation(surface, rect, progress):
+    """Draw an animated thinking indicator for AI"""
+    from constants import WHITE, BLACK
+    
+    # Clear the area
+    pygame.draw.rect(surface, (240, 240, 240), rect)
+    pygame.draw.rect(surface, BLACK, rect, 2)
+    
+    # Draw dots with pulsing animation
+    dot_count = 3
+    dot_radius = 6
+    spacing = 20
+    
+    center_x = rect.centerx
+    center_y = rect.centery
+    
+    start_x = center_x - (dot_count - 1) * spacing // 2
+    
+    for i in range(dot_count):
+        x = start_x + i * spacing
+        
+        # Create pulsing effect
+        phase = (progress + i * 0.3) % 1.0
+        alpha = int(100 + 155 * abs(0.5 - phase) * 2)
+        radius = dot_radius + int(2 * abs(0.5 - phase) * 2)
+        
+        # Draw dot with alpha
+        dot_surface = pygame.Surface((radius * 2, radius * 2), pygame.SRCALPHA)
+        pygame.draw.circle(dot_surface, (*BLACK, alpha), (radius, radius), radius)
+        surface.blit(dot_surface, (x - radius, center_y - radius))
+
+def play_sound(sound_name):
+    """Play a sound effect if available"""
+    from constants import SOUNDS
+    
+    try:
+        if sound_name in SOUNDS and SOUNDS[sound_name]:
+            SOUNDS[sound_name].play()
+    except:
+        pass  # Ignore sound errors
+
+def create_button_surface(width, height, text, font, colors, is_hovered=False):
+    """Create a styled button surface with gradient and effects"""
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    
+    # Choose colors based on hover state
+    bg_color = colors['hover'] if is_hovered else colors['bg']
+    text_color = colors['text']
+    
+    # Create gradient background
+    gradient = create_gradient_surface(width, height, bg_color, 
+                                     tuple(max(0, c - 30) for c in bg_color))
+    surface.blit(gradient, (0, 0))
+    
+    # Add border
+    border_color = tuple(min(255, c + 50) for c in bg_color)
+    pygame.draw.rect(surface, border_color, (0, 0, width, height), 3)
+    
+    # Add subtle inner shadow
+    shadow_color = tuple(max(0, c - 40) for c in bg_color)
+    pygame.draw.rect(surface, shadow_color, (2, 2, width - 4, height - 4), 1)
+    
+    # Render text with shadow
+    text_surface = font.render(text, True, (0, 0, 0))
+    text_rect = text_surface.get_rect(center=(width // 2 + 1, height // 2 + 1))
+    surface.blit(text_surface, text_rect)
+    
+    # Render main text
+    text_surface = font.render(text, True, text_color)
+    text_rect = text_surface.get_rect(center=(width // 2, height // 2))
+    surface.blit(text_surface, text_rect)
+    
+    return surface
+
+def get_piece_value(piece_type):
+    """Get the standard point value of a piece"""
+    values = {
+        'p': 100,    # Pawn
+        'n': 320,    # Knight
+        'b': 330,    # Bishop
+        'r': 500,    # Rook
+        'q': 900,    # Queen
+        'k': 20000   # King
+    }
+    return values.get(piece_type.lower(), 0)
+
+def position_to_algebraic(row, col):
+    """Convert board position to algebraic notation (e.g., (0,0) -> 'a8')"""
+    return chr(ord('a') + col) + str(8 - row)
+
+def algebraic_to_position(algebraic):
+    """Convert algebraic notation to board position (e.g., 'a8' -> (0,0))"""
+    if len(algebraic) != 2:
+        return None
+    
+    col = ord(algebraic[0].lower()) - ord('a')
+    row = 8 - int(algebraic[1])
+    
+    if 0 <= row < 8 and 0 <= col < 8:
+        return (row, col)
+    return None
+
+class Timer:
+    """Simple timer utility for measuring AI thinking time"""
+    def __init__(self):
+        self.start_time = None
+        self.end_time = None
+    
+    def start(self):
+        self.start_time = time.time()
+        self.end_time = None
+    
+    def stop(self):
+        if self.start_time:
+            self.end_time = time.time()
+            return self.get_elapsed()
+        return 0
+    
+    def get_elapsed(self):
+        if self.start_time:
+            end = self.end_time or time.time()
+            return end - self.start_time
+        return 0
+    
+    def format_time(self):
+        elapsed = self.get_elapsed()
+        if elapsed < 1:
+            return f"{elapsed*1000:.0f}ms"
+        else:
+            return f"{elapsed:.1f}s"
+
+def create_status_text(text, font, color=None):
+    """Create formatted status text surface"""
+    if color is None:
+        color = BLACK
+    
+    # Create text with slight shadow for better readability
+    shadow = font.render(text, True, (128, 128, 128))
+    main_text = font.render(text, True, color)
+    
+    # Create surface large enough for both
+    width = max(shadow.get_width(), main_text.get_width()) + 2
+    height = max(shadow.get_height(), main_text.get_height()) + 2
+    
+    surface = pygame.Surface((width, height), pygame.SRCALPHA)
+    
+    # Blit shadow first (offset by 1 pixel)
+    surface.blit(shadow, (1, 1))
+    # Blit main text
+    surface.blit(main_text, (0, 0))
+    
+    return surface

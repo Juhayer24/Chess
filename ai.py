@@ -172,9 +172,14 @@ class ChessAI:
             for col in range(8):
                 piece = game.board[row][col]
                 if piece and piece[0] == current_color:
-                    valid_moves = game.get_valid_moves(row, col)
-                    for to_row, to_col in valid_moves:
-                        moves.append((row, col, to_row, to_col))
+                    try:
+                        valid_moves = game.get_valid_moves(row, col)
+                        for to_row, to_col in valid_moves:
+                            moves.append((row, col, to_row, to_col))
+                    except (IndexError, AttributeError) as e:
+                        # Skip this piece if there's an error getting valid moves
+                        print(f"Error getting moves for piece at ({row}, {col}): {e}")
+                        continue
         
         return moves
 
@@ -240,13 +245,21 @@ class ChessAI:
                     else:
                         score -= total_value
         
-        # Add mobility (number of possible moves)
-        white_moves = len(self.get_moves_for_color(game, 'w'))
-        black_moves = len(self.get_moves_for_color(game, 'b'))
-        score += (white_moves - black_moves) * 10
+        # Add mobility (number of possible moves) with error handling
+        try:
+            white_moves = len(self.get_moves_for_color(game, 'w'))
+            black_moves = len(self.get_moves_for_color(game, 'b'))
+            score += (white_moves - black_moves) * 10
+        except Exception as e:
+            print(f"Error calculating mobility: {e}")
+            # Continue without mobility bonus
         
-        # Add king safety bonus
-        score += self.evaluate_king_safety(game, 'w') - self.evaluate_king_safety(game, 'b')
+        # Add king safety bonus with error handling
+        try:
+            score += self.evaluate_king_safety(game, 'w') - self.evaluate_king_safety(game, 'b')
+        except Exception as e:
+            print(f"Error evaluating king safety: {e}")
+            # Continue without king safety bonus
         
         return score
 
@@ -281,35 +294,44 @@ class ChessAI:
             for col in range(8):
                 piece = game.board[row][col]
                 if piece and piece[0] == color:
-                    valid_moves = game.get_valid_moves(row, col)
-                    for to_row, to_col in valid_moves:
-                        moves.append((row, col, to_row, to_col))
+                    try:
+                        valid_moves = game.get_valid_moves(row, col)
+                        for to_row, to_col in valid_moves:
+                            moves.append((row, col, to_row, to_col))
+                    except (IndexError, AttributeError) as e:
+                        # Skip this piece if there's an error getting valid moves
+                        print(f"Error getting moves for {color} piece at ({row}, {col}): {e}")
+                        continue
         
         game.turn = original_turn
         return moves
 
     def evaluate_king_safety(self, game, color: str) -> float:
         """Evaluate king safety"""
-        king_pos = game.find_king_position(color)
-        if not king_pos:
-            return -1000  # King not found (should not happen)
-        
-        safety_score = 0
-        king_row, king_col = king_pos
-        
-        # Check for pieces defending the king
-        for dr in [-1, 0, 1]:
-            for dc in [-1, 0, 1]:
-                if dr == 0 and dc == 0:
-                    continue
-                r, c = king_row + dr, king_col + dc
-                if 0 <= r < 8 and 0 <= c < 8:
-                    piece = game.board[r][c]
-                    if piece and piece[0] == color:
-                        safety_score += 10  # Friendly piece near king
-        
-        # Penalty for exposed king
-        if game.is_king_in_check(color):
-            safety_score -= 50
+        try:
+            king_pos = game.find_king_position(color)
+            if not king_pos:
+                return -1000  # King not found (should not happen)
             
-        return safety_score
+            safety_score = 0
+            king_row, king_col = king_pos
+            
+            # Check for pieces defending the king
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr == 0 and dc == 0:
+                        continue
+                    r, c = king_row + dr, king_col + dc
+                    if 0 <= r < 8 and 0 <= c < 8:
+                        piece = game.board[r][c]
+                        if piece and piece[0] == color:
+                            safety_score += 10  # Friendly piece near king
+            
+            # Penalty for exposed king
+            if hasattr(game, 'is_king_in_check') and game.is_king_in_check(color):
+                safety_score -= 50
+                
+            return safety_score
+        except Exception as e:
+            print(f"Error evaluating king safety for {color}: {e}")
+            return 0

@@ -11,9 +11,9 @@ class ChessGame:
         self.stockfish_path = stockfish_path
         self.engine = None
         self.reset_game()
-        if self.game_mode == "AI":
-            self.start_engine()
-
+        # Only start Stockfish engine for legacy AI mode (if needed)
+        # The new minimax AI doesn't need Stockfish
+        
     def start_engine(self):
         try:
             self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
@@ -27,7 +27,7 @@ class ChessGame:
             self.engine = None
 
     def get_chess_board(self):
-        # Convert your board to FEN
+        # Convert your board to FEN (kept for legacy Stockfish support if needed)
         rows = []
         for row in self.board:
             fen_row = ""
@@ -51,6 +51,7 @@ class ChessGame:
         return chess.Board(fen)
 
     def make_ai_move(self, time_limit=0.1):
+        # Legacy Stockfish AI (kept for backward compatibility)
         if not self.engine:
             self.start_engine()
         if not self.engine:
@@ -121,7 +122,10 @@ class ChessGame:
         self.showing_checkmate = False
         
         # Player names
-        self.player_names = {'w': 'Player 1', 'b': 'Player 2'}
+        if self.game_mode == "AI":
+            self.player_names = {'w': 'Human', 'b': 'AI'}
+        else:
+            self.player_names = {'w': 'Player 1', 'b': 'Player 2'}
         
         # Game states
         self.game_states = []  # For undo functionality
@@ -648,13 +652,13 @@ class ChessGame:
         if not self.is_king_in_check(color):
             # King-side castling
             if self.castling_rights[color]['king_side']:
-                if not self.board[row][col+1] and not self.board[row][col+2]:
+                if col+2 < 8 and not self.board[row][col+1] and not self.board[row][col+2]:
                     if not self.would_square_be_in_check(row, col+1, color) and not self.would_square_be_in_check(row, col+2, color):
                         moves.append((row, col+2))
             
             # Queen-side castling
             if self.castling_rights[color]['queen_side']:
-                if not self.board[row][col-1] and not self.board[row][col-2] and not self.board[row][col-3]:
+                if col-3 >= 0 and not self.board[row][col-1] and not self.board[row][col-2] and not self.board[row][col-3]:
                     if not self.would_square_be_in_check(row, col-1, color) and not self.would_square_be_in_check(row, col-2, color):
                         moves.append((row, col-2))
         
