@@ -1,9 +1,10 @@
 import pygame
 import sys
+import threading
 from pygame.locals import *
 
 from constants import FPS
-from models import ChessGame
+from models import ChessGame # Ensure ChessGame.copy() is implemented here
 from ui import draw_board, draw_sidebar, draw_score_screen
 from utils import setup_window, create_piece_surfaces, initialize_sounds
 from ai import ChessAI
@@ -88,7 +89,7 @@ def draw_mode_selection(window, font):
         # Inner highlight
         inner_rect = pygame.Rect(rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4)
         pygame.draw.rect(window, tuple(min(255, c + 30) for c in base_color), 
-                        inner_rect, width=1, border_radius=14)
+                         inner_rect, width=1, border_radius=14)
         
         # Icon
         icon_font = pygame.font.SysFont("segoeui", 36)
@@ -163,6 +164,18 @@ def draw_mode_selection(window, font):
     pygame.display.update()
     return btn_classic, btn_easy, btn_medium, btn_hard
 
+# NEW: Function to be run in a separate thread for AI move calculation.
+# This function will post an event back to the main thread when done.
+def ai_move_thread(ai_player, game_copy, ai_move_event):
+    """
+    Calculates the AI's best move on a copy of the game state
+    and posts an event to the main thread when done.
+    """
+    # The AI now works on game_copy, NOT the original 'game' object
+    ai_move = ai_player.get_best_move(game_copy)
+    ai_move_event.post(pygame.event.Event(pygame.USEREVENT + 1, {"ai_move": ai_move}))
+
+
 def main():
     # Initialize pygame
     pygame.init()
@@ -185,6 +198,9 @@ def main():
     ai_player = None
     ai_depth = 3
     font = pygame.font.SysFont("segoeui", 36, bold=True)
+    
+    # Custom event for AI move completion
+    AI_MOVE_COMPLETE = pygame.USEREVENT + 1 # Define this custom event ID
     
     # --- Game mode selection screen ---
     selecting_mode = True
@@ -218,7 +234,7 @@ def main():
                     ai_depth = 4
                     ai_player = ChessAI(depth=ai_depth)
                     selecting_mode = False
-        clock.tick(60)  # Smoother animation
+        clock.tick(60)  # Smoother animation for menu
     
     # Initialize game state with selected mode
     game = ChessGame(sounds, game_mode=game_mode)
@@ -226,76 +242,103 @@ def main():
     # Main game loop
     running = True
     ai_thinking = False
+    ai_thread = None # Reference to the AI thread
+    
     while running:
         for event in pygame.event.get():
             if event.type == QUIT:
                 if game and hasattr(game, 'close_engine'):
                     game.close_engine()
-                pygame.quit()
-                sys.exit()
+                running = False
             if event.type == KEYDOWN:
                 if event.key == K_ESCAPE:
                     running = False
                 if event.key == K_r:
+                    # Reset game and stop any ongoing AI thinking
                     game.reset_game()
                     show_score_screen = False
                     ai_thinking = False
+                    if ai_thread and ai_thread.is_alive():
+                        # In a more advanced AI, you might add a way to signal
+                        # the thread to stop calculation early (e.g., via a shared flag).
+                        # For now, we just let it finish or clear the reference.
+                        ai_thread = None 
                 if event.key == K_s:
                     show_score_screen = not show_score_screen
                 if event.key == K_u:
+                    # Undo move and stop any ongoing AI thinking
                     if game.undo_move():
                         game.play_sound("move")
                         ai_thinking = False
+                        if ai_thread and ai_thread.is_alive():
+                            # Same as reset, a stop flag for AI would be ideal.
+                            ai_thread = None
                         # If in AI mode and it's now human's turn, undo one more move
-                        if game_mode == "AI" and game.turn == 'b':
+                        if game_mode == "AI" and game.turn == 'b': # 'b' for black (AI)
                             game.undo_move()
+            
+            # Handle mouse clicks for human player
             if event.type == MOUSEBUTTONDOWN and not show_score_screen and not ai_thinking:
                 if event.button == 1:  # Left click
                     x, y = event.pos
-                    # Only process clicks on the board
-                    if x < 8 * 80 and y < 8 * 80:  # WIDTH, HEIGHT
-                        col = x // 80  # SQUARE_SIZE
-                        row = y // 80  # SQUARE_SIZE
-                        moved = game.select_piece(row, col)
+                    # Only process clicks on the board area (assuming 8x8 squares, 80 pixels each)
+                    if x < 8 * 80 and y < 8 * 80:  # Adjust based on your BOARD_WIDTH/HEIGHT and SQUARE_SIZE
+                        col = x // 80  
+                        row = y // 80  
+                        moved = game.select_piece(row, col) # This attempts to select a piece or make a move
                         
-                        # If in AI mode and human just moved, trigger AI move
+                        # If in AI mode and human just made a valid move, trigger AI's turn
                         if game_mode == "AI" and moved and not game.game_over and game.turn == 'b':
                             ai_thinking = True
-
-        # Handle AI move
-        if game_mode == "AI" and ai_player and game.turn == 'b' and not game.game_over and ai_thinking:
-            # Get AI move
-            ai_move = ai_player.get_best_move(game)
+                            # Start AI calculation in a separate thread
+                            # Pass a deep copy of the game object to the AI thread
+                            ai_thread = threading.Thread(target=ai_move_thread, args=(ai_player, game.copy(), pygame.event))
+                            ai_thread.start()
             
-            if ai_move:
-                from_row, from_col, to_row, to_col = ai_move
-                # Set the selected piece and make the move
-                game.selected_piece = (from_row, from_col)
-                game.valid_moves = game.get_valid_moves(from_row, from_col)
-                game.move_piece(to_row, to_col)
-            
-            ai_thinking = False
-
+            # NEW: Handle the custom event when AI move calculation is complete
+            if event.type == AI_MOVE_COMPLETE:
+                ai_move = event.ai_move # The calculated move from the AI thread
+                if ai_move:
+                    from_row, from_col, to_row, to_col = ai_move
+                    
+                    # Apply the AI's move to the actual game board (game object)
+                    # Your game.select_piece and game.move_piece should handle this.
+                    # This simulates the human clicking the AI's selected piece, then its destination.
+                    game.selected_piece = (from_row, from_col)
+                    game.valid_moves = game.get_valid_moves(from_row, from_col) # Recalculate valid moves for visual
+                    game.move_piece(to_row, to_col) # This actually executes the move on the main game board
+                
+                ai_thinking = False # AI is no longer thinking
+                ai_thread = None # Clear the thread reference
+                
         # Clear screen
-        from constants import PANEL_BG
+        from constants import PANEL_BG # Assuming PANEL_BG is defined in constants
         window.fill(PANEL_BG)
         
-        # Draw the game
+        # Draw the game components
         draw_board(window, game, pieces)
         if show_score_screen:
             draw_score_screen(window, game, pieces)
         else:
             draw_sidebar(window, game, pieces)
             
-        # Show AI thinking indicator
+        # Show AI thinking indicator if AI is active
         if ai_thinking:
             thinking_font = pygame.font.SysFont("segoeui", 24, bold=True)
-            thinking_text = thinking_font.render("AI is thinking...", True, (255, 255, 0))
-            window.blit(thinking_text, (650, 100))
+            # You can make this text more dynamic, e.g., "AI thinking..." then "AI thinking.." etc.
+            thinking_text = thinking_font.render("AI is thinking...", True, (255, 255, 0)) # Yellow text
+            # Position this text appropriately, perhaps in the sidebar area
+            window.blit(thinking_text, (650, 100)) # Adjust coordinates as needed for your UI
         
         # Update display
         pygame.display.update()
         clock.tick(FPS)
+
+    # Ensure engine (if any) is closed gracefully when exiting the application
+    if game and hasattr(game, 'close_engine'):
+        game.close_engine()
+    pygame.quit()
+    sys.exit()
 
 if __name__ == "__main__":
     main()

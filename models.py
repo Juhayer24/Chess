@@ -13,7 +13,43 @@ class ChessGame:
         self.reset_game()
         # Only start Stockfish engine for legacy AI mode (if needed)
         # The new minimax AI doesn't need Stockfish
-        
+
+    def copy(self):
+        """
+        Creates a deep copy of a ChessGame instance for AI to simulate moves without altering the main game.
+        """
+        new_game = ChessGame(self.sounds, self.game_mode, self.stockfish_path)
+
+        # Deep copy all mutable attributes
+        new_game.board = copy.deepcopy(self.board)
+        new_game.turn = self.turn
+        new_game.selected_piece = self.selected_piece  # Tuple, immutable
+        new_game.valid_moves = copy.deepcopy(self.valid_moves)  # List of tuples
+        new_game.game_over = self.game_over
+        new_game.winner = self.winner
+        new_game.captured_pieces = copy.deepcopy(self.captured_pieces)
+        new_game.scores = copy.deepcopy(self.scores)
+        new_game.move_history = copy.deepcopy(self.move_history)
+        new_game.check = copy.deepcopy(self.check)
+        new_game.castling_rights = copy.deepcopy(self.castling_rights)
+        new_game.en_passant_target = self.en_passant_target  # Tuple, immutable
+        new_game.halfmove_clock = self.halfmove_clock
+        new_game.fullmove_number = self.fullmove_number
+        new_game.last_move = self.last_move  # Tuple, immutable
+        new_game.stats = copy.deepcopy(self.stats)
+        new_game.current_animation = None  # Animations shouldn't persist in copies
+        new_game.animating_piece = None
+        new_game.particle_systems = []  # Particle systems are transient
+        new_game.checkmate_animation = None
+        new_game.showing_checkmate = self.showing_checkmate
+        new_game.player_names = copy.deepcopy(self.player_names)
+        new_game.game_states = copy.deepcopy(self.game_states)
+
+        # Engine is not copied; AI will use its own engine if needed
+        new_game.engine = None
+
+        return new_game
+
     def start_engine(self):
         try:
             self.engine = chess.engine.SimpleEngine.popen_uci(self.stockfish_path)
