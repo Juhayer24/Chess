@@ -142,27 +142,64 @@ def draw_mode_selection(window, font):
     draw_modern_button(btn_ai, (155, 85, 45), (135, 65, 25), 
                       "Player vs Computer", "Test your skills against AI")
     
-    # Decorative chess pieces in corners with gentle animation
-    piece_font = pygame.font.SysFont("segoeui", 48)
-    pieces = ["♔", "♛", "♜", "♝"]
-    positions = [(50, 50), (window.get_width() - 80, 50), 
-                (50, window.get_height() - 80), (window.get_width() - 80, window.get_height() - 80)]
+    # Decorative chess piece images in corners with gentle animation
+    piece_images = []
+    piece_files = [
+        "Images/Black Pieces/queen.png",      # Top-left: Black Queen
+        "Images/White Pieces/King(1).png",    # Top-right: White King
+        "Images/Black Pieces/king.png",       # Bottom-left: Black King
+        "Images/White Pieces/Queen(1).png"    # Bottom-right: White Queen
+    ]
+    
+    # Load and scale the piece images
+    for piece_file in piece_files:
+        try:
+            piece_img = pygame.image.load(piece_file)
+            # Scale down for corner decoration (80x80 pixels)
+            piece_img = pygame.transform.smoothscale(piece_img, (80, 80))
+            # Convert with alpha to preserve transparency
+            piece_img = piece_img.convert_alpha()
+            piece_images.append(piece_img)
+        except Exception as e:
+            print(f"Could not load piece image {piece_file}: {e}")
+            # Fallback to None, will use text pieces
+            piece_images.append(None)
+    
+    positions = [(50, 50), (window.get_width() - 130, 50), 
+                (50, window.get_height() - 130), (window.get_width() - 130, window.get_height() - 130)]
     
     # Gentle floating animation for pieces
     float_offset = math.sin(time_offset * 2) * 3
     
-    for i, (piece, pos) in enumerate(zip(pieces, positions)):
+    for i, (piece_img, pos) in enumerate(zip(piece_images, positions)):
         # Each piece has a slightly different animation phase
         individual_offset = math.sin(time_offset * 2 + i * 0.5) * 2
         animated_y = pos[1] + individual_offset
         
-        # Create a subtle glow effect
-        piece_glow = piece_font.render(piece, True, (100, 120, 160))
-        piece_surface = piece_font.render(piece, True, (60, 80, 120))
-        
-        # Draw glow (slightly larger and offset)
-        window.blit(piece_glow, (pos[0] - 1, animated_y - 1))
-        window.blit(piece_surface, (pos[0], animated_y))
+        if piece_img is not None:
+            # Create a subtle glow effect for the image
+            glow_surf = pygame.Surface((piece_img.get_width() + 10, piece_img.get_height() + 10), pygame.SRCALPHA)
+            glow_color = (100, 120, 160, 30)  # Subtle blue glow with transparency
+            pygame.draw.ellipse(glow_surf, glow_color, glow_surf.get_rect())
+            
+            # Draw glow first (slightly offset)
+            window.blit(glow_surf, (pos[0] - 5, animated_y - 5))
+            
+            # Draw the actual piece image
+            window.blit(piece_img, (pos[0], animated_y))
+        else:
+            # Fallback to text pieces if image loading failed
+            piece_font = pygame.font.SysFont("segoeui", 48)
+            fallback_pieces = ["♛", "♔", "♚", "♕"]
+            piece_char = fallback_pieces[i]
+            
+            # Create a subtle glow effect
+            piece_glow = piece_font.render(piece_char, True, (100, 120, 160))
+            piece_surface = piece_font.render(piece_char, True, (60, 80, 120))
+            
+            # Draw glow (slightly larger and offset)
+            window.blit(piece_glow, (pos[0] - 1, animated_y - 1))
+            window.blit(piece_surface, (pos[0], animated_y))
     
     # Add subtle animated sparkles around the title
     sparkle_count = 8
