@@ -123,14 +123,20 @@ def draw_board(window, game, pieces):
     # Blit the board to the window
     window.blit(board_surface, (0, 0))
 
-def draw_sidebar(window, game, pieces):
-    sidebar_rect = pygame.Rect(WIDTH, 0, WINDOW_WIDTH - WIDTH, WINDOW_HEIGHT)
+def draw_sidebar(window, game, pieces, sidebar_scroll=0):
+    # Get current window dimensions
+    window_width = window.get_width()
+    window_height = window.get_height()
+    
+    # Calculate sidebar dimensions
+    sidebar_width = window_width - WIDTH
+    sidebar_rect = pygame.Rect(WIDTH, 0, sidebar_width, window_height)
     pygame.draw.rect(window, PANEL_BG, sidebar_rect)
     
     # Add some depth with a gradient
     for i in range(5):
         pygame.draw.rect(window, (40 + i*2, 44 + i*2, 52 + i*2), 
-                        (WIDTH + i, i, WINDOW_WIDTH - WIDTH - i*2, WINDOW_HEIGHT - i*2), 1)
+                        (WIDTH + i, i, sidebar_width - i*2, window_height - i*2), 1)
     
     title_font = get_font(28, bold=True)
     font_large = get_font(22)
@@ -138,16 +144,16 @@ def draw_sidebar(window, game, pieces):
     font_small = get_font(14)
     
     # Title bar
-    title_rect = pygame.Rect(WIDTH, 0, WINDOW_WIDTH - WIDTH, 50)
+    title_rect = pygame.Rect(WIDTH, 0, sidebar_width, 50)
     pygame.draw.rect(window, (30, 34, 42), title_rect)
     title_text = title_font.render("CHESS", True, WHITE)
-    window.blit(title_text, (WIDTH + (WINDOW_WIDTH - WIDTH) // 2 - title_text.get_width() // 2, 10))
+    window.blit(title_text, (WIDTH + sidebar_width // 2 - title_text.get_width() // 2, 10))
     
     # Current turn indicator with glow effect
     turn_label = font_large.render("CURRENT TURN", True, WHITE)
     window.blit(turn_label, (WIDTH + 20, 70))
     
-    turn_rect = pygame.Rect(WIDTH + 20, 100, WINDOW_WIDTH - WIDTH - 40, 40)
+    turn_rect = pygame.Rect(WIDTH + 20, 100, sidebar_width - 40, 40)
     turn_color = BLUE_ACCENT if game.turn == 'w' else (50, 50, 50)
     
     # Add glow effect if in check
@@ -178,7 +184,7 @@ def draw_sidebar(window, game, pieces):
     score_label = font_large.render("SCORE", True, WHITE)
     window.blit(score_label, (WIDTH + 20, 160))
     
-    score_rect = pygame.Rect(WIDTH + 20, 190, WINDOW_WIDTH - WIDTH - 40, 60)
+    score_rect = pygame.Rect(WIDTH + 20, 190, sidebar_width - 40, 60)
     pygame.draw.rect(window, (50, 54, 62), score_rect, border_radius=5)
     
     # White score
@@ -204,7 +210,7 @@ def draw_sidebar(window, game, pieces):
     window.blit(captures_label, (WIDTH + 20, 270))
     
     # White captures
-    white_captures_rect = pygame.Rect(WIDTH + 20, 300, WINDOW_WIDTH - WIDTH - 40, 50)
+    white_captures_rect = pygame.Rect(WIDTH + 20, 300, sidebar_width - 40, 50)
     pygame.draw.rect(window, (50, 54, 62), white_captures_rect, border_radius=5)
     
     white_label = font_small.render("WHITE CAPTURED:", True, WHITE)
@@ -217,7 +223,7 @@ def draw_sidebar(window, game, pieces):
         window.blit(small_piece, (white_captures_rect.x + 10 + i * 35, white_captures_rect.y + 20))
     
     # Black captures
-    black_captures_rect = pygame.Rect(WIDTH + 20, 360, WINDOW_WIDTH - WIDTH - 40, 50)
+    black_captures_rect = pygame.Rect(WIDTH + 20, 360, sidebar_width - 40, 50)
     pygame.draw.rect(window, (50, 54, 62), black_captures_rect, border_radius=5)
     
     black_label = font_small.render("BLACK CAPTURED:", True, WHITE)
@@ -233,7 +239,7 @@ def draw_sidebar(window, game, pieces):
     history_label = font_large.render("LAST MOVES", True, WHITE)
     window.blit(history_label, (WIDTH + 20, 430))
     
-    history_rect = pygame.Rect(WIDTH + 20, 460, WINDOW_WIDTH - WIDTH - 40, 150)
+    history_rect = pygame.Rect(WIDTH + 20, 460, sidebar_width - 40, 150)
     pygame.draw.rect(window, (50, 54, 62), history_rect, border_radius=5)
     
     # Show last 5 moves (or fewer if not that many)
@@ -254,8 +260,9 @@ def draw_sidebar(window, game, pieces):
         window.blit(notation_text, (move_rect.x + 40, move_rect.centery - notation_text.get_height() // 2))
     
     # Game status and controls
+    status_y = min(630, window_height - 150)  # Adjust position based on window height
     if game.game_over:
-        status_rect = pygame.Rect(WIDTH + 20, 630, WINDOW_WIDTH - WIDTH - 40, 50)
+        status_rect = pygame.Rect(WIDTH + 20, status_y, sidebar_width - 40, 50)
         
         # CHANGED: Use 'WHITE' and 'BLACK' directly instead of using player_names
         if game.winner:
@@ -280,7 +287,8 @@ def draw_sidebar(window, game, pieces):
                                status_rect.y + 25))
     
     # Controls
-    controls_rect = pygame.Rect(WIDTH + 20, HEIGHT - 90, WINDOW_WIDTH - WIDTH - 40, 70)
+    controls_y = min(window_height - 90, status_y + 70)  # Position controls at bottom or after status
+    controls_rect = pygame.Rect(WIDTH + 20, controls_y, sidebar_width - 40, 70)
     pygame.draw.rect(window, (30, 34, 42), controls_rect, border_radius=5)
     
     controls_text = font_small.render("CONTROLS", True, WHITE)

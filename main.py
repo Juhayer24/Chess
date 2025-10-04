@@ -1,4 +1,9 @@
-import pygame
+try:
+    import pygame
+except ModuleNotFoundError:
+    print("Error: pygame is not installed. Please install required packages with: \n\n    python3 -m venv .venv\n    source .venv/bin/activate\n    pip install -r requirements.txt\n\nThen run: python3 main.py")
+    raise
+
 import sys
 import threading
 from pygame.locals import *
@@ -96,6 +101,10 @@ def main():
     window = setup_window()
     clock = pygame.time.Clock()
     
+    # Track current window dimensions
+    current_window_width = window.get_width()
+    current_window_height = window.get_height()
+    
     # Initialize sounds
     sounds = initialize_sounds()
     
@@ -148,6 +157,14 @@ def main():
                 if game and hasattr(game, 'close_engine'):
                     game.close_engine()
                 running = False
+            if event.type == VIDEORESIZE:
+                # Handle window resize
+                from constants import MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, WIDTH
+                new_width = max(event.w, MIN_WINDOW_WIDTH)
+                new_height = max(event.h, MIN_WINDOW_HEIGHT)
+                window = pygame.display.set_mode((new_width, new_height), pygame.RESIZABLE)
+                current_window_width = new_width
+                current_window_height = new_height
             if event.type == KEYDOWN:
                 if event.key == K_ESCAPE:
                     running = False
@@ -225,8 +242,8 @@ def main():
             thinking_font = pygame.font.SysFont("segoeui", 24, bold=True)
             # You can make this text more dynamic, e.g., "AI thinking..." then "AI thinking.." etc.
             thinking_text = thinking_font.render("AI is thinking...", True, (255, 255, 0)) # Yellow text
-            # Position this text appropriately, perhaps in the sidebar area
-            window.blit(thinking_text, (650, 100)) # Adjust coordinates as needed for your UI
+            # Position this text appropriately, in the sidebar area
+            window.blit(thinking_text, (WIDTH + 20, 100)) # Dynamic positioning
         
         # Update display
         pygame.display.update()

@@ -48,7 +48,25 @@ def create_piece_surfaces():
             
             # Load and scale the image
             image = pygame.image.load(image_path)
-            image = pygame.transform.scale(image, (SQUARE_SIZE, SQUARE_SIZE))
+            # Prefer per-pixel alpha so transparency is preserved
+            try:
+                image = image.convert_alpha()
+            except Exception:
+                image = image.convert()
+
+            # Smooth scale to desired square size (preserves alpha if present)
+            try:
+                image = pygame.transform.smoothscale(image, (SQUARE_SIZE, SQUARE_SIZE))
+            except Exception:
+                image = pygame.transform.scale(image, (SQUARE_SIZE, SQUARE_SIZE))
+
+            # If the image has no alpha channel, try to treat the top-left pixel as transparent
+            if image.get_flags() & pygame.SRCALPHA == 0:
+                try:
+                    bg_color = image.get_at((0, 0))
+                    image.set_colorkey(bg_color)
+                except Exception:
+                    pass
             
             # Store in the pieces dictionary with the proper code
             pieces['b' + piece_code] = image
@@ -67,7 +85,25 @@ def create_piece_surfaces():
             
             # Load and scale the image
             image = pygame.image.load(image_path)
-            image = pygame.transform.scale(image, (SQUARE_SIZE, SQUARE_SIZE))
+            # Prefer per-pixel alpha so transparency is preserved
+            try:
+                image = image.convert_alpha()
+            except Exception:
+                image = image.convert()
+
+            # Smooth scale to desired square size (preserves alpha if present)
+            try:
+                image = pygame.transform.smoothscale(image, (SQUARE_SIZE, SQUARE_SIZE))
+            except Exception:
+                image = pygame.transform.scale(image, (SQUARE_SIZE, SQUARE_SIZE))
+
+            # If the image has no alpha channel, try to treat the top-left pixel as transparent
+            if image.get_flags() & pygame.SRCALPHA == 0:
+                try:
+                    bg_color = image.get_at((0, 0))
+                    image.set_colorkey(bg_color)
+                except Exception:
+                    pass
             
             # Store in the pieces dictionary with the proper code
             pieces['w' + piece_code] = image
@@ -153,8 +189,8 @@ def setup_window():
     """Initialize the game window with icon"""
     from constants import WINDOW_WIDTH, WINDOW_HEIGHT, DARK_SQUARE, LIGHT_SQUARE, BLACK
     
-    # Create window
-    window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    # Create resizable window
+    window = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.RESIZABLE)
     pygame.display.set_caption("Advanced Chess with AI")
     
     # Try to set an icon

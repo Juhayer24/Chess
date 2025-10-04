@@ -4,8 +4,11 @@ import pygame
 BOARD_SIZE = 8
 SQUARE_SIZE = 80
 WIDTH = HEIGHT = BOARD_SIZE * SQUARE_SIZE
-WINDOW_WIDTH = WIDTH + 350  # Extra space for sideboard
-WINDOW_HEIGHT = HEIGHT
+SIDEBAR_WIDTH = 350  # Minimum sidebar width
+WINDOW_WIDTH = WIDTH + SIDEBAR_WIDTH  # Default window width
+WINDOW_HEIGHT = HEIGHT  # Default window height
+MIN_WINDOW_WIDTH = WIDTH + 300  # Minimum resizable width
+MIN_WINDOW_HEIGHT = 500  # Minimum resizable height
 FPS = 60
 
 # Colors
