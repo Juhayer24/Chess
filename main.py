@@ -386,14 +386,6 @@ def main():
             draw_score_screen(window, game, pieces)
         else:
             draw_sidebar(window, game, pieces)
-            
-        # Show AI thinking indicator if AI is active
-        if ai_thinking:
-            thinking_font = pygame.font.SysFont("segoeui", 24, bold=True)
-            # You can make this text more dynamic, e.g., "AI thinking..." then "AI thinking.." etc.
-            thinking_text = thinking_font.render("AI is thinking...", True, (255, 255, 0)) # Yellow text
-            # Position this text appropriately, in the sidebar area
-            window.blit(thinking_text, (WIDTH + 20, 100)) # Dynamic positioning
         
         # Update display
         pygame.display.update()
