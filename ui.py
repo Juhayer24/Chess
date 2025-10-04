@@ -302,115 +302,169 @@ def draw_sidebar(window, game, pieces, sidebar_scroll=0):
         window.blit(hint_text, (x_pos, y_pos))
 
 def draw_score_screen(window, game, pieces):
+    # Get current window dimensions for responsive design
+    window_width = window.get_width()
+    window_height = window.get_height()
+    
     # Create a dark overlay with transparency
-    overlay = pygame.Surface((WINDOW_WIDTH, WINDOW_HEIGHT), pygame.SRCALPHA)
+    overlay = pygame.Surface((window_width, window_height), pygame.SRCALPHA)
     overlay.fill(DARK_OVERLAY)
     window.blit(overlay, (0, 0))
     
-    # Create the stats panel
-    panel_width = min(WINDOW_WIDTH - 100, 800)
-    panel_height = min(WINDOW_HEIGHT - 100, 600)
-    panel_x = (WINDOW_WIDTH - panel_width) // 2
-    panel_y = (WINDOW_HEIGHT - panel_height) // 2
+    # Responsive panel sizing
+    panel_width = min(window_width - 80, 900)
+    panel_height = min(window_height - 80, 700)
+    panel_x = (window_width - panel_width) // 2
+    panel_y = (window_height - panel_height) // 2
     
-    # Draw the panel with a 3D effect
-    for i in range(5):
-        pygame.draw.rect(window, (SCORE_BG[0] + i*3, SCORE_BG[1] + i*3, SCORE_BG[2] + i*3),
-                        (panel_x - i, panel_y - i, panel_width + i*2, panel_height + i*2),
-                        border_radius=15)
+    # Draw the panel with elegant design
+    # Shadow effect
+    shadow_rect = pygame.Rect(panel_x + 8, panel_y + 8, panel_width, panel_height)
+    shadow_surf = pygame.Surface((panel_width, panel_height), pygame.SRCALPHA)
+    pygame.draw.rect(shadow_surf, (0, 0, 0, 100), shadow_surf.get_rect(), border_radius=20)
+    window.blit(shadow_surf, shadow_rect)
     
-    pygame.draw.rect(window, SCORE_BG, (panel_x, panel_y, panel_width, panel_height), border_radius=15)
+    # Main panel background with gradient
+    for i in range(panel_height):
+        alpha = i / panel_height
+        color = (
+            int(SCORE_BG[0] + (SCORE_BG[0] * 0.3) * alpha),
+            int(SCORE_BG[1] + (SCORE_BG[1] * 0.3) * alpha),
+            int(SCORE_BG[2] + (SCORE_BG[2] * 0.3) * alpha)
+        )
+        pygame.draw.line(window, color, (panel_x, panel_y + i), (panel_x + panel_width, panel_y + i))
     
-    # Add inner border for more depth
-    pygame.draw.rect(window, (40, 50, 60), (panel_x, panel_y, panel_width, panel_height), 2, border_radius=15)
+    # Panel border
+    pygame.draw.rect(window, (70, 80, 90), (panel_x, panel_y, panel_width, panel_height), 3, border_radius=20)
     
-    # Add a title bar
-    title_rect = pygame.Rect(panel_x, panel_y, panel_width, 60)
-    pygame.draw.rect(window, (10, 20, 30), title_rect, border_top_left_radius=15, border_top_right_radius=15)
+    # Responsive font sizes
+    title_size = max(24, min(36, panel_width // 25))
+    heading_size = max(18, min(24, panel_width // 35))
+    subheading_size = max(16, min(20, panel_width // 40))
+    text_size = max(14, min(18, panel_width // 50))
+    small_size = max(12, min(14, panel_width // 60))
     
-    # Fonts
-    title_font = get_font(36, bold=True)
-    heading_font = get_font(24, bold=True)
-    subheading_font = get_font(20, bold=True)
-    font = get_font(18)
+    title_font = get_font(title_size, bold=True)
+    heading_font = get_font(heading_size, bold=True)
+    subheading_font = get_font(subheading_size, bold=True)
+    font = get_font(text_size)
+    small_font = get_font(small_size)
     
-    # Title
+    # Title bar with gradient
+    title_height = 60
+    title_rect = pygame.Rect(panel_x, panel_y, panel_width, title_height)
+    for i in range(title_height):
+        alpha = i / title_height
+        color = (
+            int(15 + (25 - 15) * alpha),
+            int(25 + (35 - 25) * alpha),
+            int(40 + (50 - 40) * alpha)
+        )
+        pygame.draw.line(window, color, (panel_x, panel_y + i), (panel_x + panel_width, panel_y + i))
+    
+    pygame.draw.rect(window, (70, 80, 90), title_rect, 2, border_top_left_radius=20, border_top_right_radius=20)
+    
+    # Title with shadow
     title_text = title_font.render("GAME STATISTICS", True, WHITE)
+    title_shadow = title_font.render("GAME STATISTICS", True, (0, 0, 0))
+    window.blit(title_shadow, (title_rect.centerx - title_text.get_width() // 2 + 2, title_rect.centery - title_text.get_height() // 2 + 2))
     window.blit(title_text, (title_rect.centerx - title_text.get_width() // 2, title_rect.centery - title_text.get_height() // 2))
     
-    # Game status
-    status_y = panel_y + 80
-    status_text = "Game in Progress" if not game.game_over else "Game Over"
-    status = heading_font.render(status_text, True, WHITE)
-    window.blit(status, (panel_x + panel_width // 2 - status.get_width() // 2, status_y))
+    # Content area
+    content_y = panel_y + title_height + 20
+    content_height = panel_height - title_height - 80  # Leave space for return button
     
-    # CHANGED: Use 'White' and 'Black' directly 
+    # Game status section
+    status_height = 80
+    status_y = content_y
+    
+    # Status background
+    status_rect = pygame.Rect(panel_x + 20, status_y, panel_width - 40, status_height)
+    pygame.draw.rect(window, (35, 45, 55), status_rect, border_radius=10)
+    pygame.draw.rect(window, (60, 70, 80), status_rect, 2, border_radius=10)
+    
+    # Game status text
     if game.game_over:
-        if game.winner:
-            result_text = f"{'White' if game.winner == 'w' else 'Black'} Wins!"
-            result_color = BLUE_ACCENT if game.winner == 'w' else (80, 80, 80)
+        if hasattr(game, 'winner') and game.winner:
+            if game.winner == 'w':
+                status_text = "🏆 WHITE WINS!"
+                status_color = BLUE_ACCENT
+            elif game.winner == 'b':
+                status_text = "🏆 BLACK WINS!"
+                status_color = (80, 80, 80)
+            else:
+                status_text = "🤝 DRAW"
+                status_color = (150, 150, 150)
         else:
-            result_text = "Draw"
-            result_color = (150, 150, 150)
-        
-        result = heading_font.render(result_text, True, result_color)
-        window.blit(result, (panel_x + panel_width // 2 - result.get_width() // 2, status_y + 40))
+            status_text = "🤝 DRAW"
+            status_color = (150, 150, 150)
     else:
-        # CHANGED: Use 'White' and 'Black' directly
-        turn_text = f"{'White' if game.turn == 'w' else 'Black'}'s Turn"
-        turn = heading_font.render(turn_text, True, BLUE_ACCENT if game.turn == 'w' else (80, 80, 80))
-        window.blit(turn, (panel_x + panel_width // 2 - turn.get_width() // 2, status_y + 40))
+        current_player = 'WHITE' if game.turn == 'w' else 'BLACK'
+        status_text = f"⏳ {current_player}'S TURN"
+        status_color = BLUE_ACCENT if game.turn == 'w' else (150, 150, 150)
         
-        if game.check[game.turn]:
-            check_text = subheading_font.render("In Check!", True, RED_ACCENT)
-            window.blit(check_text, (panel_x + panel_width // 2 - check_text.get_width() // 2, status_y + 70))
+        if hasattr(game, 'check') and game.check[game.turn]:
+            status_text += " - IN CHECK!"
+            status_color = RED_ACCENT
     
-    # Score and pieces
-    scores_y = status_y + 100
+    status_surface = heading_font.render(status_text, True, status_color)
+    window.blit(status_surface, (status_rect.centerx - status_surface.get_width() // 2, status_rect.centery - status_surface.get_height() // 2))
     
-    # Draw player comparison boxes
-    box_width = (panel_width - 60) // 2
-    white_box = pygame.Rect(panel_x + 20, scores_y, box_width, 250)
-    black_box = pygame.Rect(panel_x + 40 + box_width, scores_y, box_width, 250)
+    # Player comparison section
+    comparison_y = status_y + status_height + 20
+    comparison_height = 200
     
-    # Draw boxes with 3D effect
-    for box, color, label in [(white_box, (40, 100, 180), "WHITE"), (black_box, (40, 40, 40), "BLACK")]:
-        # Shadow
-        shadow_rect = pygame.Rect(box.x + 5, box.y + 5, box.width, box.height)
-        pygame.draw.rect(window, (0, 0, 0, 100), shadow_rect, border_radius=10)
+    # Player boxes
+    box_width = (panel_width - 80) // 2
+    white_box = pygame.Rect(panel_x + 20, comparison_y, box_width, comparison_height)
+    black_box = pygame.Rect(panel_x + 40 + box_width, comparison_y, box_width, comparison_height)
+    
+    for box, color, label, theme_color in [(white_box, 'w', "WHITE", (50, 120, 200)), (black_box, 'b', "BLACK", (60, 60, 60))]:
+        # Box background with gradient
+        for i in range(comparison_height):
+            alpha = i / comparison_height
+            bg_color = (
+                int(theme_color[0] * (0.3 + 0.2 * alpha)),
+                int(theme_color[1] * (0.3 + 0.2 * alpha)),
+                int(theme_color[2] * (0.3 + 0.2 * alpha))
+            )
+            pygame.draw.line(window, bg_color, (box.x, box.y + i), (box.right, box.y + i))
         
-        # Box
-        pygame.draw.rect(window, color, box, border_radius=10)
+        # Box border
+        pygame.draw.rect(window, theme_color, box, 3, border_radius=10)
         
-        # Highlight top edge for 3D effect
-        highlight_color = tuple(min(255, c + 40) for c in color)
-        pygame.draw.line(window, highlight_color, (box.left + 5, box.top + 5), (box.right - 5, box.top + 5), 2)
-        pygame.draw.line(window, highlight_color, (box.left + 5, box.top + 5), (box.left + 5, box.bottom - 5), 2)
+        # Player label
+        label_surface = subheading_font.render(label, True, WHITE)
+        label_bg = pygame.Rect(box.x + 10, box.y + 10, box.width - 20, 30)
+        pygame.draw.rect(window, theme_color, label_bg, border_radius=5)
+        window.blit(label_surface, (label_bg.centerx - label_surface.get_width() // 2, label_bg.centery - label_surface.get_height() // 2))
         
-        # Title for the box
-        label_text = subheading_font.render(label, True, WHITE)
-        window.blit(label_text, (box.centerx - label_text.get_width() // 2, box.y + 15))
-    
-    # Player stats
-    for box, color in [(white_box, 'w'), (black_box, 'b')]:
         # Score
-        score_text = heading_font.render(f"Score: {game.scores[color]}", True, WHITE)
-        window.blit(score_text, (box.centerx - score_text.get_width() // 2, box.y + 50))
+        if hasattr(game, 'scores'):
+            score_text = f"Score: {game.scores[color]}"
+        else:
+            score_text = "Score: 0"
+        score_surface = font.render(score_text, True, WHITE)
+        window.blit(score_surface, (box.x + 15, box.y + 50))
         
         # Stats
-        stats = [
-            f"Moves: {game.stats[color]['moves']}",
-            f"Captures: {game.stats[color]['captures']}",
-            f"Checks: {game.stats[color]['checks']}"
-        ]
+        if hasattr(game, 'stats'):
+            stats_data = [
+                ("Moves", game.stats[color].get('moves', 0)),
+                ("Captures", game.stats[color].get('captures', 0)),
+                ("Checks", game.stats[color].get('checks', 0))
+            ]
+        else:
+            stats_data = [("Moves", 0), ("Captures", 0), ("Checks", 0)]
         
-        for i, stat in enumerate(stats):
-            stat_text = font.render(stat, True, WHITE)
-            window.blit(stat_text, (box.x + 20, box.y + 90 + i * 30))
+        for i, (stat_name, stat_value) in enumerate(stats_data):
+            stat_text = f"{stat_name}: {stat_value}"
+            stat_surface = small_font.render(stat_text, True, WHITE)
+            window.blit(stat_surface, (box.x + 15, box.y + 80 + i * 20))
         
-        # Pieces remaining
-        remaining = font.render("Remaining Pieces:", True, WHITE)
-        window.blit(remaining, (box.x + 20, box.y + 180))
+        # Remaining pieces (compact display)
+        pieces_text = small_font.render("Pieces:", True, WHITE)
+        window.blit(pieces_text, (box.x + 15, box.y + 150))
         
         # Count pieces
         piece_counts = {'p': 0, 'r': 0, 'n': 0, 'b': 0, 'q': 0, 'k': 0}
@@ -419,68 +473,72 @@ def draw_score_screen(window, game, pieces):
                 if piece and piece[0] == color:
                     piece_counts[piece[1]] += 1
         
-        # Show piece counts with icons
-        piece_types = [('p', 'Pawns'), ('n', 'Knights'), ('b', 'Bishops'), ('r', 'Rooks'), ('q', 'Queens')]
-        for i, (piece_code, piece_name) in enumerate(piece_types):
-            # Get piece image and scale down
-            piece_img = pieces[color + piece_code]
-            small_piece = pygame.transform.scale(piece_img, (25, 25))
+        # Display piece counts compactly
+        piece_display = f"♙{piece_counts['p']} ♖{piece_counts['r']} ♘{piece_counts['n']} ♗{piece_counts['b']} ♕{piece_counts['q']}"
+        pieces_surface = small_font.render(piece_display, True, WHITE)
+        window.blit(pieces_surface, (box.x + 15, box.y + 170))
+    
+    # Move history section
+    history_y = comparison_y + comparison_height + 20
+    history_height = content_height - (history_y - content_y) - 20
+    
+    if history_height > 60:  # Only show if there's enough space
+        history_rect = pygame.Rect(panel_x + 20, history_y, panel_width - 40, history_height)
+        pygame.draw.rect(window, (25, 35, 45), history_rect, border_radius=10)
+        pygame.draw.rect(window, (60, 70, 80), history_rect, 2, border_radius=10)
+        
+        # History title
+        history_title = subheading_font.render("RECENT MOVES", True, WHITE)
+        window.blit(history_title, (history_rect.x + 15, history_rect.y + 10))
+        
+        # Move list
+        if hasattr(game, 'move_history') and game.move_history:
+            moves_area = pygame.Rect(history_rect.x + 15, history_rect.y + 40, history_rect.width - 30, history_rect.height - 50)
+            max_moves = min(len(game.move_history), (moves_area.height - 10) // 18)
+            recent_moves = game.move_history[-max_moves:] if max_moves > 0 else []
             
-            # Calculate position
-            row, col = divmod(i, 3)
-            piece_x = box.x + 20 + col * 80
-            piece_y = box.y + 210 + row * 30
-            
-            # Draw piece icon and count
-            window.blit(small_piece, (piece_x, piece_y))
-            count_text = font.render(f"x{piece_counts[piece_code]}", True, WHITE)
-            window.blit(count_text, (piece_x + 30, piece_y + 5))
-    
-    # Move history
-    history_y = scores_y + 270
-    history_text = subheading_font.render("MOVE HISTORY", True, WHITE)
-    window.blit(history_text, (panel_x + panel_width // 2 - history_text.get_width() // 2, history_y))
-    
-    # Create a scrolling move history area
-    history_rect = pygame.Rect(panel_x + 20, history_y + 30, panel_width - 40, 100)
-    pygame.draw.rect(window, (30, 40, 50), history_rect, border_radius=5)
-    
-    # Show up to 6 moves in the history box
-    max_visible_moves = 6
-    move_history = game.move_history[-max_visible_moves:] if len(game.move_history) > max_visible_moves else game.move_history
-    
-    for i, move in enumerate(move_history):
-        move_num = i + (len(game.move_history) - len(move_history)) + 1
-        _, _, _, _, piece, notation = move
-        color = piece[0]
-        
-        # Alternate background colors for better readability
-        move_rect = pygame.Rect(history_rect.x + 5, history_rect.y + 5 + i * 15, history_rect.width - 10, 14)
-        if i % 2 == 1:
-            pygame.draw.rect(window, (40, 50, 60), move_rect, border_radius=2)
-        
-        # Draw move number
-        num_text = font.render(f"{move_num}.", True, WHITE)
-        window.blit(num_text, (move_rect.x + 5, move_rect.y))
-        
-        # Draw player indicator (white/black)
-        # CHANGED: Use "W" for White and "B" for Black directly
-        color_text = font.render("W" if color == 'w' else "B", True, BLUE_ACCENT if color == 'w' else (150, 150, 150))
-        window.blit(color_text, (move_rect.x + 35, move_rect.y))
-        
-        # Draw notation
-        notation_text = font.render(notation, True, WHITE)
-        window.blit(notation_text, (move_rect.x + 55, move_rect.y))
+            for i, move in enumerate(recent_moves):
+                if len(move) >= 6:
+                    move_num = len(game.move_history) - len(recent_moves) + i + 1
+                    _, _, _, _, piece, notation = move
+                    move_color = piece[0] if piece else 'w'
+                    
+                    # Alternate row backgrounds
+                    move_y = moves_area.y + i * 18
+                    if i % 2 == 1:
+                        row_rect = pygame.Rect(moves_area.x, move_y, moves_area.width, 16)
+                        pygame.draw.rect(window, (35, 45, 55), row_rect, border_radius=3)
+                    
+                    # Move text
+                    move_text = f"{move_num}. {notation}"
+                    move_surface = small_font.render(move_text, True, BLUE_ACCENT if move_color == 'w' else (180, 180, 180))
+                    window.blit(move_surface, (moves_area.x + 5, move_y))
+        else:
+            no_moves_text = small_font.render("No moves recorded yet", True, (120, 120, 120))
+            window.blit(no_moves_text, (history_rect.x + 15, history_rect.y + 45))
     
     # Return button
-    button_y = panel_y + panel_height - 50
-    button_width = 200
-    button_rect = pygame.Rect(panel_x + panel_width // 2 - button_width // 2, button_y, button_width, 30)
+    button_width = min(250, panel_width - 100)
+    button_height = 40
+    button_x = panel_x + (panel_width - button_width) // 2
+    button_y = panel_y + panel_height - 60
     
-    # Button with 3D effect
-    pygame.draw.rect(window, (60, 70, 80), button_rect, border_radius=5)
-    pygame.draw.rect(window, (80, 90, 100), (button_rect.x, button_rect.y, button_rect.width, button_rect.height), 1, border_radius=5)
+    button_rect = pygame.Rect(button_x, button_y, button_width, button_height)
+    
+    # Button gradient
+    for i in range(button_height):
+        alpha = i / button_height
+        color = (
+            int(70 + (90 - 70) * alpha),
+            int(80 + (100 - 80) * alpha),
+            int(90 + (110 - 90) * alpha)
+        )
+        pygame.draw.line(window, color, (button_x, button_y + i), (button_x + button_width, button_y + i))
+    
+    pygame.draw.rect(window, (100, 110, 120), button_rect, 2, border_radius=8)
     
     # Button text
-    button_text = font.render("RETURN TO GAME (S)", True, WHITE)
+    button_text = font.render("RETURN TO GAME (Press S)", True, WHITE)
+    button_shadow = font.render("RETURN TO GAME (Press S)", True, (0, 0, 0))
+    window.blit(button_shadow, (button_rect.centerx - button_text.get_width() // 2 + 1, button_rect.centery - button_text.get_height() // 2 + 1))
     window.blit(button_text, (button_rect.centerx - button_text.get_width() // 2, button_rect.centery - button_text.get_height() // 2))
