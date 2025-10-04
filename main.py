@@ -45,7 +45,7 @@ def draw_mode_selection(window, font):
     button_font = pygame.font.SysFont("segoeui", 28, bold=True)
     
     # Main title with shadow effect
-    title_text = "ROYAL CHESS"
+    title_text = "Chess Game"
     title_shadow = title_font.render(title_text, True, (0, 0, 0))
     title_surface = title_font.render(title_text, True, (220, 220, 235))
     
