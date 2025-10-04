@@ -301,6 +301,7 @@ def main():
     ai_thinking = False
     ai_thread = None # Reference to the AI thread
     button_rects = {}  # Store button rectangles for click detection
+    stats_return_button = None  # Store stats return button rectangle
     
     while running:
         # Get mouse position for hover effects
@@ -372,6 +373,15 @@ def main():
                             ai_thread = threading.Thread(target=ai_move_thread, args=(ai_player, game.copy(), pygame.event))
                             ai_thread.start()
             
+            # Handle mouse clicks on stats page
+            if event.type == MOUSEBUTTONDOWN and show_score_screen:
+                if event.button == 1:  # Left click
+                    x, y = event.pos
+                    # Check if click is on return button
+                    if stats_return_button and stats_return_button.collidepoint(x, y):
+                        show_score_screen = False
+                        continue
+            
             # NEW: Handle the custom event when AI move calculation is complete
             if event.type == AI_MOVE_COMPLETE:
                 ai_move = event.ai_move # The calculated move from the AI thread
@@ -395,7 +405,7 @@ def main():
         # Draw the game components
         draw_board(window, game, pieces)
         if show_score_screen:
-            draw_score_screen(window, game, pieces)
+            stats_return_button = draw_score_screen(window, game, pieces, mouse_pos=mouse_pos)
         else:
             button_rects = draw_sidebar(window, game, pieces, mouse_pos=mouse_pos)
         
