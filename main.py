@@ -6,6 +6,7 @@ except ModuleNotFoundError:
 
 import sys
 import threading
+import math
 from pygame.locals import *
 
 from constants import FPS
@@ -15,66 +16,178 @@ from utils import setup_window, create_piece_surfaces, initialize_sounds
 from ai import ChessAI
 
 def draw_mode_selection(window, font):
-    """Draw a clean and elegant game mode selection screen"""
-    window.fill((28, 32, 44))
-
-    # Gradient background
+    """Draw a sophisticated and modern game mode selection screen"""
+    # Rich dark background with subtle pattern
+    window.fill((15, 23, 42))  # Deep navy blue
+    
+    # Create a subtle geometric pattern background
+    pattern_color = (25, 35, 55)
+    for x in range(0, window.get_width(), 60):
+        for y in range(0, window.get_height(), 60):
+            if (x // 60 + y // 60) % 2 == 0:
+                pygame.draw.rect(window, pattern_color, (x, y, 30, 30))
+    
+    # Animated gradient overlay
+    time_offset = pygame.time.get_ticks() * 0.001
     for y in range(window.get_height()):
-        alpha = y / window.get_height()
+        alpha = 0.3 + 0.1 * math.sin(time_offset + y * 0.01)
+        gradient_intensity = y / window.get_height()
         color = (
-            int(28 + (42 - 28) * alpha),
-            int(32 + (48 - 32) * alpha),
-            int(44 + (68 - 44) * alpha)
+            int(15 + (35 - 15) * gradient_intensity * alpha),
+            int(23 + (45 - 23) * gradient_intensity * alpha), 
+            int(42 + (75 - 42) * gradient_intensity * alpha)
         )
         pygame.draw.line(window, color, (0, y), (window.get_width(), y))
-
-    # Fonts
-    title_font = pygame.font.SysFont("segoeui", 56, bold=True)
-    button_font = pygame.font.SysFont("segoeui", 32, bold=True)
-
-    # Title
-    title_text = "Chess Masters"
-    title_surface = title_font.render(title_text, True, (245, 245, 245))
+    
+    # Elegant typography
+    title_font = pygame.font.SysFont("georgia", 72, bold=True)  # Serif font for elegance
+    subtitle_font = pygame.font.SysFont("segoeui", 24)
+    button_font = pygame.font.SysFont("segoeui", 28, bold=True)
+    
+    # Main title with shadow effect
+    title_text = "ROYAL CHESS"
+    title_shadow = title_font.render(title_text, True, (0, 0, 0))
+    title_surface = title_font.render(title_text, True, (220, 220, 235))
+    
     title_x = window.get_width() // 2 - title_surface.get_width() // 2
+    window.blit(title_shadow, (title_x + 3, 63))  # Shadow offset
     window.blit(title_surface, (title_x, 60))
-
-    # Button setup
-    btn_width, btn_height = 360, 85
+    
+    # Elegant subtitle
+    subtitle_text = "Choose Your Battle"
+    subtitle_surface = subtitle_font.render(subtitle_text, True, (160, 170, 190))
+    subtitle_x = window.get_width() // 2 - subtitle_surface.get_width() // 2
+    window.blit(subtitle_surface, (subtitle_x, 140))
+    
+    # Decorative line under title
+    line_width = 200
+    line_x = window.get_width() // 2 - line_width // 2
+    pygame.draw.rect(window, (100, 120, 150), (line_x, 170, line_width, 2))
+    
+    # Modern button design
+    btn_width, btn_height = 380, 90
     center_x = window.get_width() // 2
-    btn_classic = pygame.Rect(center_x - btn_width // 2, 200, btn_width, btn_height)
-    btn_ai = pygame.Rect(center_x - btn_width // 2, 320, btn_width, btn_height)
+    spacing = 40
+    
+    btn_classic = pygame.Rect(center_x - btn_width // 2, 220, btn_width, btn_height)
+    btn_ai = pygame.Rect(center_x - btn_width // 2, 220 + btn_height + spacing, btn_width, btn_height)
     mouse_pos = pygame.mouse.get_pos()
 
-    def draw_button(rect, color, text, icon_char):
+    def draw_modern_button(rect, primary_color, secondary_color, text, description):
         is_hover = rect.collidepoint(mouse_pos)
-        base_color = tuple(min(255, c + 30) if is_hover else c for c in color)
-
-        # Shadow
-        shadow_rect = rect.move(0, 4)
-        shadow_surf = pygame.Surface((rect.width, rect.height), pygame.SRCALPHA)
-        pygame.draw.rect(shadow_surf, (0, 0, 0, 60), shadow_surf.get_rect(), border_radius=14)
+        
+        # Hover animation effect
+        hover_scale = 1.05 if is_hover else 1.0
+        hover_offset = -2 if is_hover else 0
+        
+        # Calculate scaled rect
+        scaled_width = int(rect.width * hover_scale)
+        scaled_height = int(rect.height * hover_scale)
+        scaled_x = rect.centerx - scaled_width // 2
+        scaled_y = rect.centery - scaled_height // 2 + hover_offset
+        scaled_rect = pygame.Rect(scaled_x, scaled_y, scaled_width, scaled_height)
+        
+        # Drop shadow (more prominent on hover)
+        shadow_offset = 8 if is_hover else 5
+        shadow_alpha = 80 if is_hover else 50
+        shadow_rect = scaled_rect.move(shadow_offset, shadow_offset)
+        shadow_surf = pygame.Surface((scaled_rect.width, scaled_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(shadow_surf, (0, 0, 0, shadow_alpha), shadow_surf.get_rect(), border_radius=15)
         window.blit(shadow_surf, shadow_rect)
-
-        # Button background
-        pygame.draw.rect(window, base_color, rect, border_radius=14)
-        pygame.draw.rect(window, (255, 255, 255), rect, width=2, border_radius=14)
-
-        # Icon + text
-        icon_font = pygame.font.SysFont("segoeui", 36)
-        icon_surface = icon_font.render(icon_char, True, (255, 255, 255))
+        
+        # Gradient background
+        for i in range(scaled_rect.height):
+            gradient_ratio = i / scaled_rect.height
+            color = (
+                int(primary_color[0] * (1 - gradient_ratio) + secondary_color[0] * gradient_ratio),
+                int(primary_color[1] * (1 - gradient_ratio) + secondary_color[1] * gradient_ratio),
+                int(primary_color[2] * (1 - gradient_ratio) + secondary_color[2] * gradient_ratio)
+            )
+            pygame.draw.line(window, color, 
+                           (scaled_rect.x, scaled_rect.y + i), 
+                           (scaled_rect.right, scaled_rect.y + i))
+        
+        # Border with glow effect
+        border_color = (255, 255, 255, 150) if is_hover else (200, 200, 200, 100)
+        pygame.draw.rect(window, border_color[:3], scaled_rect, width=2, border_radius=15)
+        
+        # Inner highlight
+        highlight_rect = pygame.Rect(scaled_rect.x + 2, scaled_rect.y + 2, 
+                                   scaled_rect.width - 4, scaled_rect.height // 3)
+        highlight_surf = pygame.Surface((highlight_rect.width, highlight_rect.height), pygame.SRCALPHA)
+        pygame.draw.rect(highlight_surf, (255, 255, 255, 30), highlight_surf.get_rect(), border_radius=12)
+        window.blit(highlight_surf, highlight_rect)
+        
+        # Button text
         text_surface = button_font.render(text, True, (255, 255, 255))
-
-        icon_x = rect.x + 25
-        icon_y = rect.centery - icon_surface.get_height() // 2
-        text_x = icon_x + icon_surface.get_width() + 20
-        text_y = rect.centery - text_surface.get_height() // 2
-
-        window.blit(icon_surface, (icon_x, icon_y))
+        text_x = scaled_rect.centerx - text_surface.get_width() // 2
+        text_y = scaled_rect.centery - text_surface.get_height() // 2 - 8
+        
+        # Text shadow
+        text_shadow = button_font.render(text, True, (0, 0, 0))
+        window.blit(text_shadow, (text_x + 1, text_y + 1))
         window.blit(text_surface, (text_x, text_y))
-
-    # Draw buttons
-    draw_button(btn_classic, (65, 105, 225), "Classic Duel", "♔")
-    draw_button(btn_ai, (34, 139, 34), "AI Opponent", "🤖")
+        
+        # Description text
+        desc_font = pygame.font.SysFont("segoeui", 16)
+        desc_surface = desc_font.render(description, True, (200, 210, 220))
+        desc_x = scaled_rect.centerx - desc_surface.get_width() // 2
+        desc_y = text_y + text_surface.get_height() + 5
+        window.blit(desc_surface, (desc_x, desc_y))
+    
+    # Draw buttons with sophisticated styling
+    draw_modern_button(btn_classic, (45, 85, 155), (25, 65, 135), 
+                      "Player vs Player", "Challenge a friend in classic chess")
+    
+    draw_modern_button(btn_ai, (155, 85, 45), (135, 65, 25), 
+                      "Player vs Computer", "Test your skills against AI")
+    
+    # Decorative chess pieces in corners with gentle animation
+    piece_font = pygame.font.SysFont("segoeui", 48)
+    pieces = ["♔", "♛", "♜", "♝"]
+    positions = [(50, 50), (window.get_width() - 80, 50), 
+                (50, window.get_height() - 80), (window.get_width() - 80, window.get_height() - 80)]
+    
+    # Gentle floating animation for pieces
+    float_offset = math.sin(time_offset * 2) * 3
+    
+    for i, (piece, pos) in enumerate(zip(pieces, positions)):
+        # Each piece has a slightly different animation phase
+        individual_offset = math.sin(time_offset * 2 + i * 0.5) * 2
+        animated_y = pos[1] + individual_offset
+        
+        # Create a subtle glow effect
+        piece_glow = piece_font.render(piece, True, (100, 120, 160))
+        piece_surface = piece_font.render(piece, True, (60, 80, 120))
+        
+        # Draw glow (slightly larger and offset)
+        window.blit(piece_glow, (pos[0] - 1, animated_y - 1))
+        window.blit(piece_surface, (pos[0], animated_y))
+    
+    # Add subtle animated sparkles around the title
+    sparkle_count = 8
+    for i in range(sparkle_count):
+        angle = (time_offset + i * (2 * math.pi / sparkle_count)) % (2 * math.pi)
+        radius = 150 + 20 * math.sin(time_offset * 3 + i)
+        sparkle_x = title_x + title_surface.get_width() // 2 + radius * math.cos(angle)
+        sparkle_y = 80 + radius * 0.3 * math.sin(angle)
+        
+        # Only draw sparkles that are within reasonable bounds
+        if 0 < sparkle_x < window.get_width() and 0 < sparkle_y < window.get_height():
+            sparkle_size = int(2 + math.sin(time_offset * 4 + i) * 1)
+            sparkle_alpha = int(100 + 50 * math.sin(time_offset * 2 + i))
+            sparkle_color = (200, 220, 255, min(255, max(0, sparkle_alpha)))
+            
+            sparkle_surf = pygame.Surface((sparkle_size * 2, sparkle_size * 2), pygame.SRCALPHA)
+            pygame.draw.circle(sparkle_surf, sparkle_color[:3], (sparkle_size, sparkle_size), sparkle_size)
+            window.blit(sparkle_surf, (sparkle_x - sparkle_size, sparkle_y - sparkle_size))
+    
+    # Subtle footer
+    footer_font = pygame.font.SysFont("segoeui", 14)
+    footer_text = "Use ESC to quit • Classic chess rules apply"
+    footer_surface = footer_font.render(footer_text, True, (80, 90, 110))
+    footer_x = window.get_width() // 2 - footer_surface.get_width() // 2
+    window.blit(footer_surface, (footer_x, window.get_height() - 40))
 
     pygame.display.update()
     return btn_classic, btn_ai
