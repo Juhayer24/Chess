@@ -300,8 +300,12 @@ def main():
     running = True
     ai_thinking = False
     ai_thread = None # Reference to the AI thread
+    button_rects = {}  # Store button rectangles for click detection
     
     while running:
+        # Get mouse position for hover effects
+        mouse_pos = pygame.mouse.get_pos()
+        
         for event in pygame.event.get():
             if event.type == QUIT:
                 if game and hasattr(game, 'close_engine'):
@@ -318,34 +322,42 @@ def main():
             if event.type == KEYDOWN:
                 if event.key == K_ESCAPE:
                     running = False
-                if event.key == K_r:
-                    # Reset game and stop any ongoing AI thinking
-                    game.reset_game()
-                    show_score_screen = False
-                    ai_thinking = False
-                    if ai_thread and ai_thread.is_alive():
-                        # In a more advanced AI, you might add a way to signal
-                        # the thread to stop calculation early (e.g., via a shared flag).
-                        # For now, we just let it finish or clear the reference.
-                        ai_thread = None 
                 if event.key == K_s:
                     show_score_screen = not show_score_screen
-                if event.key == K_u:
-                    # Undo move and stop any ongoing AI thinking
-                    if game.undo_move():
-                        game.play_sound("move")
-                        ai_thinking = False
-                        if ai_thread and ai_thread.is_alive():
-                            # Same as reset, a stop flag for AI would be ideal.
-                            ai_thread = None
-                        # If in AI mode and it's now human's turn, undo one more move
-                        if game_mode == "AI" and game.turn == 'b': # 'b' for black (AI)
-                            game.undo_move()
             
-            # Handle mouse clicks for human player
+            # Handle mouse clicks for human player and UI buttons
             if event.type == MOUSEBUTTONDOWN and not show_score_screen and not ai_thinking:
                 if event.button == 1:  # Left click
                     x, y = event.pos
+                    
+                    # Check if click is on any UI button
+                    if button_rects:
+                        if button_rects.get('restart') and button_rects['restart'].collidepoint(x, y):
+                            # Restart game
+                            game.reset_game()
+                            show_score_screen = False
+                            ai_thinking = False
+                            if ai_thread and ai_thread.is_alive():
+                                ai_thread = None
+                            continue
+                        elif button_rects.get('undo') and button_rects['undo'].collidepoint(x, y):
+                            # Undo move
+                            game.undo_move()
+                            if ai_thread and ai_thread.is_alive():
+                                ai_thread = None
+                            # If in AI mode and it's now human's turn, undo one more move
+                            if game_mode == "AI" and game.turn == 'b': # 'b' for black (AI)
+                                game.undo_move()
+                            continue
+                        elif button_rects.get('stats') and button_rects['stats'].collidepoint(x, y):
+                            # Toggle stats screen
+                            show_score_screen = not show_score_screen
+                            continue
+                        elif button_rects.get('quit') and button_rects['quit'].collidepoint(x, y):
+                            # Quit game
+                            running = False
+                            continue
+                    
                     # Only process clicks on the board area (assuming 8x8 squares, 80 pixels each)
                     if x < 8 * 80 and y < 8 * 80:  # Adjust based on your BOARD_WIDTH/HEIGHT and SQUARE_SIZE
                         col = x // 80  
@@ -385,7 +397,7 @@ def main():
         if show_score_screen:
             draw_score_screen(window, game, pieces)
         else:
-            draw_sidebar(window, game, pieces)
+            button_rects = draw_sidebar(window, game, pieces, mouse_pos=mouse_pos)
         
         # Update display
         pygame.display.update()

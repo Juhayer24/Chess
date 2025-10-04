@@ -7,6 +7,62 @@ from constants import (
 )
 from utils import get_font
 
+def draw_professional_button(window, rect, text, is_hovered=False, button_type="primary"):
+    """Draw a professional-looking button with gradient and hover effects"""
+    # Define color schemes for different button types
+    color_schemes = {
+        "primary": {
+            "bg": (52, 73, 94),      # Professional blue-gray
+            "bg_hover": (41, 128, 185),  # Brighter blue on hover
+            "border": (34, 49, 63),   # Darker border
+            "text": WHITE
+        },
+        "danger": {
+            "bg": (192, 57, 43),      # Professional red
+            "bg_hover": (231, 76, 60), # Brighter red on hover
+            "border": (169, 50, 38),   # Darker border
+            "text": WHITE
+        },
+        "success": {
+            "bg": (39, 174, 96),      # Professional green
+            "bg_hover": (46, 204, 113), # Brighter green on hover
+            "border": (34, 153, 84),   # Darker border
+            "text": WHITE
+        }
+    }
+    
+    scheme = color_schemes.get(button_type, color_schemes["primary"])
+    bg_color = scheme["bg_hover"] if is_hovered else scheme["bg"]
+    
+    # Draw button with gradient effect
+    # Main button background
+    pygame.draw.rect(window, bg_color, rect, border_radius=8)
+    
+    # Add subtle gradient effect
+    gradient_surface = pygame.Surface((rect.width, rect.height // 2), pygame.SRCALPHA)
+    gradient_color = (*bg_color[:3], 60)  # Semi-transparent version
+    pygame.draw.rect(gradient_surface, gradient_color, (0, 0, rect.width, rect.height // 2), border_radius=8)
+    window.blit(gradient_surface, (rect.x, rect.y))
+    
+    # Draw border
+    pygame.draw.rect(window, scheme["border"], rect, 2, border_radius=8)
+    
+    # Add inner highlight for 3D effect
+    if not is_hovered:
+        inner_rect = pygame.Rect(rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4)
+        highlight_color = (*bg_color[:3], 40)
+        highlight_surface = pygame.Surface((inner_rect.width, 2), pygame.SRCALPHA)
+        highlight_surface.fill((*WHITE[:3], 60))
+        window.blit(highlight_surface, (inner_rect.x, inner_rect.y))
+    
+    # Draw button text
+    font = pygame.font.SysFont("segoeui", 16, bold=True)
+    text_surface = font.render(text, True, scheme["text"])
+    text_rect = text_surface.get_rect(center=rect.center)
+    window.blit(text_surface, text_rect)
+    
+    return rect  # Return rect for click detection
+
 def draw_board(window, game, pieces):
     # Draw chess board with 3D effect
     board_surface = pygame.Surface((WIDTH, HEIGHT))
@@ -123,7 +179,7 @@ def draw_board(window, game, pieces):
     # Blit the board to the window
     window.blit(board_surface, (0, 0))
 
-def draw_sidebar(window, game, pieces, sidebar_scroll=0):
+def draw_sidebar(window, game, pieces, sidebar_scroll=0, mouse_pos=None):
     # Get current window dimensions
     window_width = window.get_width()
     window_height = window.get_height()
@@ -286,20 +342,42 @@ def draw_sidebar(window, game, pieces, sidebar_scroll=0):
         window.blit(winner_text, (status_rect.centerx - winner_text.get_width() // 2, 
                                status_rect.y + 25))
     
-    # Controls
-    controls_y = min(window_height - 90, status_y + 70)  # Position controls at bottom or after status
-    controls_rect = pygame.Rect(WIDTH + 20, controls_y, sidebar_width - 40, 70)
-    pygame.draw.rect(window, (30, 34, 42), controls_rect, border_radius=5)
+    # Controls Section with Buttons
+    controls_y = min(window_height - 120, status_y + 70)  # Position controls at bottom or after status
     
-    controls_text = font_small.render("CONTROLS", True, WHITE)
-    window.blit(controls_text, (controls_rect.centerx - controls_text.get_width() // 2, controls_rect.y + 5))
+    # Action Buttons
+    button_width = (sidebar_width - 60) // 2  # Two buttons per row with spacing
+    button_height = 35
+    button_spacing = 10
     
-    key_hints = ["R - Reset Game", "U - Undo Move", "S - Stats Screen", "ESC - Quit"]
-    for i, hint in enumerate(key_hints):
-        hint_text = font_small.render(hint, True, WHITE)
-        x_pos = controls_rect.x + 20 + (i % 2) * ((controls_rect.width - 40) // 2)
-        y_pos = controls_rect.y + 25 + (i // 2) * 20
-        window.blit(hint_text, (x_pos, y_pos))
+    # First row of buttons
+    restart_rect = pygame.Rect(WIDTH + 20, controls_y, button_width, button_height)
+    undo_rect = pygame.Rect(WIDTH + 30 + button_width, controls_y, button_width, button_height)
+    
+    # Second row of buttons  
+    stats_rect = pygame.Rect(WIDTH + 20, controls_y + button_height + button_spacing, button_width, button_height)
+    quit_rect = pygame.Rect(WIDTH + 30 + button_width, controls_y + button_height + button_spacing, button_width, button_height)
+    
+    # Check for hover states
+    mouse_x, mouse_y = mouse_pos if mouse_pos else (0, 0)
+    restart_hovered = restart_rect.collidepoint(mouse_x, mouse_y)
+    undo_hovered = undo_rect.collidepoint(mouse_x, mouse_y)
+    stats_hovered = stats_rect.collidepoint(mouse_x, mouse_y)
+    quit_hovered = quit_rect.collidepoint(mouse_x, mouse_y)
+    
+    # Draw buttons with professional styling
+    draw_professional_button(window, restart_rect, "NEW GAME", restart_hovered, "success")
+    draw_professional_button(window, undo_rect, "UNDO", undo_hovered, "primary")
+    draw_professional_button(window, stats_rect, "STATS", stats_hovered, "primary")
+    draw_professional_button(window, quit_rect, "QUIT", quit_hovered, "danger")
+    
+    # Return button rectangles for click detection
+    return {
+        'restart': restart_rect,
+        'undo': undo_rect,
+        'stats': stats_rect,
+        'quit': quit_rect
+    }
 
 def draw_score_screen(window, game, pieces):
     # Get current window dimensions for responsive design
