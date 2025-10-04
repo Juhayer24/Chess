@@ -9,7 +9,7 @@ import threading
 import math
 from pygame.locals import *
 
-from constants import FPS
+from constants import FPS, WIDTH
 from models import ChessGame # Ensure ChessGame.copy() is implemented here
 from ui import draw_board, draw_sidebar, draw_score_screen
 from utils import setup_window, create_piece_surfaces, initialize_sounds
@@ -309,7 +309,7 @@ def main():
                 running = False
             if event.type == VIDEORESIZE:
                 # Handle window resize
-                from constants import MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT, WIDTH
+                from constants import MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT
                 new_width = max(event.w, MIN_WINDOW_WIDTH)
                 new_height = max(event.h, MIN_WINDOW_HEIGHT)
                 window = pygame.display.set_mode((new_width, new_height), pygame.RESIZABLE)
