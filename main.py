@@ -247,6 +247,30 @@ def main():
     pygame.init()
     pygame.mixer.init()
     
+    # Try to initialize gesture control (optional)
+    gesture_controller = None
+    try:
+        from gesture_control import HandGestureVolumeControl
+        gesture_controller = HandGestureVolumeControl(window_name="Volume Control (Chess)")
+        
+        if gesture_controller.is_available():
+            # Start gesture control in background thread
+            if gesture_controller.start_threaded():
+                print("✓ Hand gesture volume control started")
+                print("  Use thumb and index finger pinch gestures to control volume")
+            else:
+                print("⚠ Could not start gesture control")
+                gesture_controller = None
+        else:
+            print("⚠ Gesture control unavailable - no camera detected")
+            gesture_controller = None
+    except ImportError:
+        print("ℹ Gesture control not available - install opencv-python and mediapipe to enable")
+        gesture_controller = None
+    except Exception as e:
+        print(f"⚠ Gesture control initialization failed: {e}")
+        gesture_controller = None
+    
     # Set up the window
     window = setup_window()
     clock = pygame.time.Clock()
@@ -416,6 +440,15 @@ def main():
     # Ensure engine (if any) is closed gracefully when exiting the application
     if game and hasattr(game, 'close_engine'):
         game.close_engine()
+    
+    # Clean up gesture control
+    if gesture_controller:
+        try:
+            gesture_controller.stop_threaded()
+            gesture_controller.cleanup()
+        except Exception as e:
+            print(f"Error cleaning up gesture control: {e}")
+    
     pygame.quit()
     sys.exit()
 
