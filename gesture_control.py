@@ -29,11 +29,12 @@ from typing import Optional, Tuple
 current_os = platform.system()
 windows_audio_available = False
 
+# Windows-specific imports (only import if on Windows)
 if current_os == "Windows":
     try:
         from ctypes import cast, POINTER
-        from comtypes import CLSCTX_ALL
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        from comtypes import CLSCTX_ALL  # type: ignore
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume  # type: ignore
         windows_audio_available = True
     except ImportError:
         print("Warning: pycaw not installed. Run 'pip install pycaw' for Windows volume control")
@@ -42,6 +43,18 @@ elif current_os == "Darwin":  # macOS
     import os
 elif current_os == "Linux":
     import subprocess
+
+# Type hints for Windows-only variables (prevents Pylance errors)
+if current_os == "Windows" and windows_audio_available:
+    # These will be properly typed when imported above
+    pass
+else:
+    # Define dummy types for non-Windows systems to prevent type errors
+    CLSCTX_ALL = None  # type: ignore
+    AudioUtilities = None  # type: ignore
+    IAudioEndpointVolume = None  # type: ignore
+    cast = None  # type: ignore
+    POINTER = None  # type: ignore
 
 
 class HandGestureVolumeControl:

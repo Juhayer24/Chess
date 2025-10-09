@@ -9,6 +9,8 @@ Use this when you want to run gesture control separately.
 
 import sys
 import os
+import pygame
+from pygame.locals import QUIT, MOUSEBUTTONDOWN
 
 # Add current directory to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -22,7 +24,6 @@ def main():
     print()
     
     try:
-        import pygame
         pygame.init()
         pygame.mixer.init()
         
@@ -33,7 +34,6 @@ def main():
         from constants import FPS
         import threading
         import math
-        from pygame.locals import *
         
         # Set up the window
         window = setup_window()
@@ -72,10 +72,10 @@ def main():
         while selecting_mode:
             btn_classic, btn_ai = draw_mode_selection(window, font)
             for event in pygame.event.get():
-                if event.type == pygame.QUIT:
+                if event.type == QUIT:
                     pygame.quit()
                     sys.exit()
-                elif event.type == pygame.MOUSEBUTTONDOWN:
+                elif event.type == MOUSEBUTTONDOWN:
                     mouse_pos = pygame.mouse.get_pos()
                     if btn_classic.collidepoint(mouse_pos):
                         game_mode = "classic"
@@ -98,7 +98,7 @@ def main():
             mouse_pos = pygame.mouse.get_pos()
             
             for event in pygame.event.get():
-                if event.type == pygame.QUIT:
+                if event.type == QUIT:
                     running = False
                 elif event.type == AI_MOVE_COMPLETE:
                     # Handle AI move completion
