@@ -6,6 +6,8 @@ except ModuleNotFoundError:
 
 import sys
 import threading
+import socket
+import select
 import math
 from pygame.locals import *
 
@@ -251,7 +253,8 @@ def main():
     gesture_controller = None
     try:
         from gesture_control import HandGestureVolumeControl
-        gesture_controller = HandGestureVolumeControl(window_name="Volume Control (Chess)")
+        # Enable UDP sending from gesture process so it can talk to this game
+        gesture_controller = HandGestureVolumeControl(window_name="Volume Control (Chess)", udp_enabled=True, udp_host="127.0.0.1", udp_port=5006)
         
         if gesture_controller.is_available():
             # Start gesture control in background thread
@@ -270,6 +273,41 @@ def main():
     except Exception as e:
         print(f"⚠ Gesture control initialization failed: {e}")
         gesture_controller = None
+
+    # --- UDP listener for gesture commands ---
+    GESTURE_UDP_PORT = 5006
+    GESTURE_EVENT = pygame.USEREVENT + 2
+
+    def udp_listener(stop_event):
+        """Listen for UDP gesture commands and post pygame events."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setblocking(False)
+        try:
+            sock.bind(("127.0.0.1", GESTURE_UDP_PORT))
+        except Exception as e:
+            print(f"Failed to bind gesture UDP socket: {e}")
+            return
+
+        while not stop_event.is_set():
+            # Use select to poll the socket without blocking
+            rlist, _, _ = select.select([sock], [], [], 0.05)
+            if sock in rlist:
+                try:
+                    data, addr = sock.recvfrom(1024)
+                    cmd = data.decode('utf-8').strip()
+                    # Post a pygame event with the gesture command
+                    pygame.event.post(pygame.event.Event(GESTURE_EVENT, {"cmd": cmd}))
+                    # Send ACK back to the sender
+                    try:
+                        sock.sendto(f"ACK:{cmd}".encode('utf-8'), addr)
+                    except Exception:
+                        pass
+                except Exception:
+                    continue
+
+    udp_stop = threading.Event()
+    udp_thread = threading.Thread(target=udp_listener, args=(udp_stop,), daemon=True)
+    udp_thread.start()
     
     # Set up the window
     window = setup_window()
@@ -349,6 +387,66 @@ def main():
                     running = False
                 if event.key == K_s:
                     show_score_screen = not show_score_screen
+
+            # Handle gesture UDP events
+            if event.type == GESTURE_EVENT and not show_score_screen and not ai_thinking:
+                cmd = getattr(event, 'cmd', None)
+                if cmd:
+                    # Track last gesture for UI feedback
+                    try:
+                        game.last_gesture_cmd = (cmd, pygame.time.get_ticks())
+                    except Exception:
+                        pass
+                    # Map gesture commands to game actions
+                    # Cursor stored on game as gesture_cursor (row, col)
+                    if not hasattr(game, 'gesture_cursor') or game.gesture_cursor is None:
+                        game.gesture_cursor = (0, 0)
+
+                    row, col = game.gesture_cursor
+
+                    if cmd.startswith('cursor:'):
+                        try:
+                            rc = cmd.split(':',1)[1]
+                            r_s,c_s = rc.split(',')
+                            row = max(0, min(7, int(r_s)))
+                            col = max(0, min(7, int(c_s)))
+                            game.gesture_cursor = (row, col)
+                        except Exception:
+                            pass
+                    elif cmd == 'move_left':
+                        col = max(0, col - 1)
+                    elif cmd == 'move_right':
+                        col = min(7, col + 1)
+                    elif cmd == 'move_up':
+                        row = max(0, row - 1)
+                    elif cmd == 'move_down':
+                        row = min(7, row + 1)
+                    elif cmd == 'select':
+                        # Debounce selects to avoid repeated toggles
+                        now_ms = pygame.time.get_ticks()
+                        last = getattr(game, 'last_select_ms', 0)
+                        if now_ms - last > 300:
+                            moved = game.select_piece(row, col)
+                            game.last_select_ms = now_ms
+                            # If in AI mode and human moved, trigger AI
+                            if game_mode == 'AI' and moved and not game.game_over and game.turn == 'b':
+                                ai_thinking = True
+                                ai_thread = threading.Thread(target=ai_move_thread, args=(ai_player, game.copy(), pygame.event))
+                                ai_thread.start()
+                    elif cmd == 'confirm':
+                        if game.selected_piece:
+                            to_row, to_col = row, col
+                            game.move_piece(to_row, to_col)
+                    elif cmd == 'confirm':
+                        # Confirm (drop) - try to move to cursor
+                        if game.selected_piece:
+                            to_row, to_col = row, col
+                            game.move_piece(to_row, to_col)
+                    elif cmd == 'cancel':
+                        game.selected_piece = None
+                        game.valid_moves = []
+
+                    game.gesture_cursor = (row, col)
             
             # Handle mouse clicks for human player and UI buttons
             if event.type == MOUSEBUTTONDOWN and not show_score_screen and not ai_thinking:

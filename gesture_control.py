@@ -23,7 +23,9 @@ import time
 import threading
 import queue
 import sys
+import argparse
 from typing import Optional, Tuple
+import socket
 
 # Check what OS we're running on and import the right libraries
 current_os = platform.system()
@@ -63,7 +65,7 @@ class HandGestureVolumeControl:
     Optimized to run alongside other applications like the chess game.
     """
     
-    def __init__(self, camera_index: int = 0, window_name: str = "Gesture Volume Control"):
+    def __init__(self, camera_index: int = 0, window_name: str = "Gesture Volume Control", udp_enabled: bool = False, udp_host: str = "127.0.0.1", udp_port: int = 5006):
         """
         Initialize the hand gesture volume control system.
         
@@ -75,6 +77,22 @@ class HandGestureVolumeControl:
         self.running = False
         self.thread = None
         self.command_queue = queue.Queue()
+        # UDP command sender (optional)
+        self.udp_enabled = udp_enabled
+        self.udp_host = udp_host
+        self.udp_port = udp_port
+        self._last_sent_command = None
+        self._last_sent_time = 0
+        self._send_interval = 0.12  # seconds between UDP sends
+        self.udp_sock = None
+        if self.udp_enabled:
+            try:
+                self.udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                self.udp_sock.setblocking(False)
+                print(f"Gesture UDP sender enabled -> {self.udp_host}:{self.udp_port}")
+            except Exception as e:
+                print(f"Failed to create UDP socket: {e}")
+                self.udp_enabled = False
         
         # Set up MediaPipe for hand tracking
         self.mp_hands = mp.solutions.hands
@@ -121,8 +139,30 @@ class HandGestureVolumeControl:
         self.frame_rate = 0
         self.last_frame_time = 0
         self.show_debug_info = True
-        
-        print(f"Hand gesture volume control initialized for {current_os}")
+
+        # Gesture/command detection helpers (initialized inside constructor)
+        self.last_index_pos = None
+        self.move_threshold = 40  # pixels to trigger a directional move (tweakable)
+        self.finger_state_history = []
+        self.finger_history_length = 7
+        self.stable_gesture = None
+        self.stable_count = 0
+        self.stable_required = 4  # require gesture to be stable for N frames
+        self.last_ack = None  # (cmd, timestamp)
+        # Cursor smoothing (continuous index finger -> board square)
+        self.cursor_row_f = None
+        self.cursor_col_f = None
+        self.cursor_alpha = 0.35  # smoothing factor
+        self._last_cursor_tile = None
+        # Cooldowns for non-directional commands
+        self._cooldowns = {
+            'select': 0.8,
+            'confirm': 0.8,
+            'cancel': 0.6
+        }
+        self._last_cmd_time = {}
+
+    print(f"Hand gesture volume control initialized for {current_os}")
         
     def _initialize_camera(self, preferred_index: int = 0):
         """Try different camera indices to find one that works"""
@@ -334,10 +374,140 @@ class HandGestureVolumeControl:
             
             # Draw the visual feedback
             self._draw_finger_tracking(frame, finger_distance, (thumb_x, thumb_y), (index_x, index_y))
+
+            # --- Simple gesture detection for chess control ---
+            # Determine which fingers are up (basic heuristic)
+            fingers_up = 0
+            finger_up_flags = [False] * 5  # thumb, index, middle, ring, pinky
+
+            # Landmarks indices: thumb_tip=4, index_tip=8, middle_tip=12, ring_tip=16, pinky_tip=20
+            tips = [4, 8, 12, 16, 20]
+            pips = [2, 6, 10, 14, 18]
+            for i, tip_idx in enumerate(tips):
+                tip = hand_landmarks.landmark[tip_idx]
+                pip = hand_landmarks.landmark[pips[i]]
+                # For fingers (except thumb) compare y coordinates (smaller y is up in image coords)
+                if i == 0:
+                    # Thumb: compare x to pip to detect extended thumb (very simple)
+                    if (tip.x - pip.x) * (1 if thumb_x < index_x else -1) > 0.03:
+                        finger_up_flags[i] = True
+                else:
+                    if tip.y < pip.y - 0.02:
+                        finger_up_flags[i] = True
+
+            fingers_up = sum(1 for f in finger_up_flags if f)
+
+            # Keep a short history to avoid flicker
+            self.finger_state_history.append(tuple(finger_up_flags))
+            if len(self.finger_state_history) > self.finger_history_length:
+                self.finger_state_history.pop(0)
+
+            # Majority voting over history
+            votes = [0] * 5
+            for h in self.finger_state_history:
+                for i, v in enumerate(h):
+                    votes[i] += 1 if v else 0
+            stable_flags = [votes[i] > (len(self.finger_state_history) // 2) for i in range(5)]
+            stable_count = sum(1 for f in stable_flags if f)
+
+            # Detect gestures (with hysteresis and stability requirement)
+            gesture_candidate = None
+            # Closed fist -> select (no fingers up)
+            if stable_count == 0:
+                gesture_candidate = "select"
+            # Open palm -> cancel
+            elif stable_count >= 4:
+                gesture_candidate = "cancel"
+            # One finger (index) up -> confirm
+            elif stable_flags[1] and not any(stable_flags[i] for i in [0,2,3,4]):
+                gesture_candidate = "confirm"
+
+            # Directional movement using index fingertip motion (require persistent motion)
+            directional = None
+            if self.last_index_pos is not None:
+                dx = index_x - self.last_index_pos[0]
+                dy = index_y - self.last_index_pos[1]
+                if abs(dx) > self.move_threshold or abs(dy) > self.move_threshold:
+                    if abs(dx) > abs(dy):
+                        directional = "move_right" if dx > 0 else "move_left"
+                    else:
+                        directional = "move_down" if dy > 0 else "move_up"
+
+            # Update index position history smoothing by simple low-pass
+            if self.last_index_pos is None:
+                self.last_index_pos = (index_x, index_y)
+            else:
+                sx = int(self.last_index_pos[0] * 0.6 + index_x * 0.4)
+                sy = int(self.last_index_pos[1] * 0.6 + index_y * 0.4)
+                self.last_index_pos = (sx, sy)
+
+            # Map index fingertip to board cursor continuously
+            # Convert to tile indices with smoothing
+            height, width = frame.shape[:2]
+            raw_col_f = (index_x / max(1, width)) * 8.0
+            raw_row_f = (index_y / max(1, height)) * 8.0
+            if self.cursor_col_f is None:
+                self.cursor_col_f = raw_col_f
+                self.cursor_row_f = raw_row_f
+            else:
+                self.cursor_col_f = self.cursor_col_f * (1 - self.cursor_alpha) + raw_col_f * self.cursor_alpha
+                self.cursor_row_f = self.cursor_row_f * (1 - self.cursor_alpha) + raw_row_f * self.cursor_alpha
+
+            quant_col = int(max(0, min(7, round(self.cursor_col_f))))
+            quant_row = int(max(0, min(7, round(self.cursor_row_f))))
+            current_tile = (quant_row, quant_col)
+
+            # Send cursor tile updates when changed
+            if current_tile != self._last_cursor_tile:
+                self._send_udp_command(f"cursor:{quant_row},{quant_col}")
+                self._last_cursor_tile = current_tile
+
+            # Prefer directional if present
+            if directional:
+                # To avoid flicker, only accept if enough time passed or it changed
+                gesture_to_send = directional
+            else:
+                # Require stability for non-directional gestures
+                if gesture_candidate == self.stable_gesture:
+                    self.stable_count += 1
+                else:
+                    self.stable_gesture = gesture_candidate
+                    self.stable_count = 1
+
+                if self.stable_gesture and self.stable_count >= self.stable_required:
+                    gesture_to_send = self.stable_gesture
+                else:
+                    gesture_to_send = None
+
+            # Send gesture command over UDP if enabled
+            if gesture_to_send:
+                # Apply per-command cooldowns for non-directional gestures
+                if gesture_to_send in ("select", "confirm", "cancel"):
+                    tnow = time.time()
+                    last_t = self._last_cmd_time.get(gesture_to_send, 0)
+                    min_gap = self._cooldowns.get(gesture_to_send, 0.6)
+                    if (tnow - last_t) >= min_gap:
+                        self._send_udp_command(gesture_to_send)
+                        self._last_cmd_time[gesture_to_send] = tnow
+                        # Require gesture to leave pose before re-arming
+                        self.stable_gesture = None
+                        self.stable_count = 0
+                else:
+                    self._send_udp_command(gesture_to_send)
         
         # Always draw the volume bar
         self._draw_volume_indicator(frame, self.current_volume_level)
         
+        # Draw last recognized gesture label
+        try:
+            label = self._last_sent_command or (self.stable_gesture if self.stable_gesture else "")
+            if label:
+                cv2.putText(frame, f'Gesture: {label}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 220, 255), 2)
+            # Show ACK briefly when received
+            if self.last_ack and time.time() - self.last_ack[1] < 1.2:
+                cv2.putText(frame, f'ACK: {self.last_ack[0]}', (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
+        except Exception:
+            pass
         # Calculate FPS for monitoring
         current_time = time.time()
         if self.last_frame_time > 0:
@@ -348,6 +518,48 @@ class HandGestureVolumeControl:
         self._draw_ui_text(frame, finger_distance, target_volume)
         
         return frame
+
+    def _send_udp_command(self, cmd: str):
+        """Send a short text command over UDP (rate-limited and deduped)."""
+        if not self.udp_enabled or not self.udp_sock:
+            return
+
+        now = time.time()
+        # Avoid sending duplicates too rapidly
+        if cmd == self._last_sent_command and (now - self._last_sent_time) < self._send_interval:
+            return
+
+        if (now - self._last_sent_time) < 0.02:
+            # global minimum spacing
+            return
+
+        try:
+            # Send command
+            self.udp_sock.sendto(cmd.encode('utf-8'), (self.udp_host, int(self.udp_port)))
+            self._last_sent_command = cmd
+            self._last_sent_time = now
+            if self.show_debug_info:
+                print(f"Sent gesture command: {cmd}")
+
+            # Try to read a short ACK back (non-blocking). Wait briefly using select.
+            try:
+                import select as _sel
+                r, _, _ = _sel.select([self.udp_sock], [], [], 0.03)
+                if r:
+                    data, addr = self.udp_sock.recvfrom(256)
+                    text = data.decode('utf-8', errors='ignore')
+                    if text.startswith('ACK:'):
+                        ack_cmd = text.split(':', 1)[1]
+                        self.last_ack = (ack_cmd, time.time())
+                        if self.show_debug_info:
+                            print(f"Received ACK: {ack_cmd} from {addr}")
+            except Exception:
+                pass
+        except BlockingIOError:
+            # Non-blocking; ignore if socket would block
+            pass
+        except Exception as e:
+            print(f"Failed to send UDP command '{cmd}': {e}")
     
     def _draw_ui_text(self, frame, finger_distance: float, target_volume: float):
         """Draw all UI text in one optimized function"""
@@ -390,6 +602,21 @@ class HandGestureVolumeControl:
         elif key == ord('l'):
             # Quick calibration - set maximum
             print(f"Maximum distance set to current distance")
+        elif key == ord('u'):
+            # Toggle UDP sending
+            self.udp_enabled = not self.udp_enabled
+            print(f"UDP sending: {'ON' if self.udp_enabled else 'OFF'}")
+        elif key == ord('v'):
+            # Toggle volume visual only (no system change)
+            # We can't disable the draw, but we can freeze volume updates by setting factor to 0
+            self.smoothing_factor = 0.0 if self.smoothing_factor > 0 else 0.2
+            print(f"Volume smoothing {'OFF' if self.smoothing_factor == 0 else 'ON'}")
+        elif key == ord('['):
+            self.move_threshold = max(10, self.move_threshold - 5)
+            print(f"Move threshold: {self.move_threshold}")
+        elif key == ord(']'):
+            self.move_threshold = min(200, self.move_threshold + 5)
+            print(f"Move threshold: {self.move_threshold}")
         
         return True
     
@@ -526,12 +753,29 @@ class HandGestureVolumeControl:
 
 def main():
     """Main function for running gesture control standalone"""
+    parser = argparse.ArgumentParser(description="Hand Gesture Controller for Chess (Volume + UDP commands)")
+    parser.add_argument("--camera-index", type=int, default=0, help="Camera index (default 0)")
+    parser.add_argument("--udp", action="store_true", help="Enable UDP sending of gesture commands")
+    parser.add_argument("--udp-host", type=str, default="127.0.0.1", help="UDP host (default 127.0.0.1)")
+    parser.add_argument("--udp-port", type=int, default=5006, help="UDP port (default 5006)")
+    parser.add_argument("--no-volume", action="store_true", help="Disable volume changes (visual only)")
+    args = parser.parse_args()
+
     print("Hand Gesture Volume Control for Chess Game")
     print("==========================================")
-    
+    print(f"Camera index: {args.camera_index} | UDP: {'ON' if args.udp else 'OFF'} -> {args.udp_host}:{args.udp_port}")
+
     # Create the gesture controller
-    gesture_controller = HandGestureVolumeControl()
-    
+    gesture_controller = HandGestureVolumeControl(camera_index=args.camera_index,
+                                                  window_name="Gesture Control",
+                                                  udp_enabled=args.udp,
+                                                  udp_host=args.udp_host,
+                                                  udp_port=args.udp_port)
+    # If volume disabled, set smoothing to 0 so _change_system_volume throttles itself effectively
+    if args.no_volume:
+        gesture_controller.smoothing_factor = 0.0
+        print("Volume control: OFF (visual only)")
+
     try:
         # Start the main control loop
         gesture_controller.start_gesture_control()
