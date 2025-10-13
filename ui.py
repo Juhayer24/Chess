@@ -158,7 +158,8 @@ def draw_board(window, game, pieces):
         if 0 <= gc_row < BOARD_SIZE and 0 <= gc_col < BOARD_SIZE:
             # Cursor: semi-transparent yellow border
             cursor_surf = pygame.Surface((SQUARE_SIZE, SQUARE_SIZE), pygame.SRCALPHA)
-            pygame.draw.rect(cursor_surf, (255, 220, 80, 120), (0, 0, SQUARE_SIZE, SQUARE_SIZE), 4, border_radius=4)
+            color = (80, 200, 255, 150) if game.selected_piece else (255, 220, 80, 120)
+            pygame.draw.rect(cursor_surf, color, (0, 0, SQUARE_SIZE, SQUARE_SIZE), 4, border_radius=4)
             window.blit(cursor_surf, (gc_col * SQUARE_SIZE, gc_row * SQUARE_SIZE))
 
             # If no piece selected, draw a small pulsing dot to indicate hover
@@ -333,16 +334,7 @@ def draw_sidebar(window, game, pieces, sidebar_scroll=0, mouse_pos=None):
     # Game status and controls
     status_y = min(630, window_height - 150)  # Adjust position based on window height
 
-    # Show last gesture received (if any) just under the turn indicator
-    try:
-        if hasattr(game, 'last_gesture_cmd') and game.last_gesture_cmd:
-            cmd, ts = game.last_gesture_cmd
-            # Show for ~1.5s
-            if pygame.time.get_ticks() - ts < 1500:
-                gtext = font_small.render(f"Gesture: {cmd}", True, (200, 210, 220))
-                window.blit(gtext, (WIDTH + 20, 145))
-    except Exception:
-        pass
+    # No on-screen gesture debug text in the game UI
     if game.game_over:
         status_rect = pygame.Rect(WIDTH + 20, status_y, sidebar_width - 40, 50)
         

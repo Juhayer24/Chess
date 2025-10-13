@@ -254,13 +254,13 @@ def main():
     try:
         from gesture_control import HandGestureVolumeControl
         # Enable UDP sending from gesture process so it can talk to this game
-        gesture_controller = HandGestureVolumeControl(window_name="Volume Control (Chess)", udp_enabled=True, udp_host="127.0.0.1", udp_port=5006)
+        gesture_controller = HandGestureVolumeControl(window_name="Volume Control (Chess)", udp_enabled=True, udp_host="127.0.0.1", udp_port=5006, volume_enabled=False)
         
         if gesture_controller.is_available():
             # Start gesture control in background thread
             if gesture_controller.start_threaded():
-                print("✓ Hand gesture volume control started")
-                print("  Use thumb and index finger pinch gestures to control volume")
+                print("✓ Hand gesture control started (volume disabled)")
+                print("  Use fist=select, one-finger=confirm, palm=cancel; move index finger to move cursor")
             else:
                 print("⚠ Could not start gesture control")
                 gesture_controller = None
@@ -397,6 +397,9 @@ def main():
                         game.last_gesture_cmd = (cmd, pygame.time.get_ticks())
                     except Exception:
                         pass
+                    # Only allow human to act on their turn (block controlling AI side)
+                    if game_mode == 'AI' and game.turn == 'b':
+                        continue
                     # Map gesture commands to game actions
                     # Cursor stored on game as gesture_cursor (row, col)
                     if not hasattr(game, 'gesture_cursor') or game.gesture_cursor is None:
@@ -411,6 +414,22 @@ def main():
                             row = max(0, min(7, int(r_s)))
                             col = max(0, min(7, int(c_s)))
                             game.gesture_cursor = (row, col)
+                        except Exception:
+                            pass
+                    elif any(cmd.startswith(prefix) for prefix in ['move_left_', 'move_right_', 'move_up_', 'move_down_']):
+                        try:
+                            parts = cmd.split('_')
+                            direction = f"{parts[0]}_{parts[1]}"  # e.g., move_left
+                            steps = int(parts[2]) if len(parts) > 2 else 1
+                            for _ in range(max(1, min(3, steps))):
+                                if 'left' in direction:
+                                    col = max(0, col - 1)
+                                elif 'right' in direction:
+                                    col = min(7, col + 1)
+                                elif 'up' in direction:
+                                    row = max(0, row - 1)
+                                elif 'down' in direction:
+                                    row = min(7, row + 1)
                         except Exception:
                             pass
                     elif cmd == 'move_left':
@@ -434,14 +453,29 @@ def main():
                                 ai_thread = threading.Thread(target=ai_move_thread, args=(ai_player, game.copy(), pygame.event))
                                 ai_thread.start()
                     elif cmd == 'confirm':
-                        if game.selected_piece:
-                            to_row, to_col = row, col
-                            game.move_piece(to_row, to_col)
-                    elif cmd == 'confirm':
                         # Confirm (drop) - try to move to cursor
                         if game.selected_piece:
                             to_row, to_col = row, col
-                            game.move_piece(to_row, to_col)
+                            moved = game.move_piece(to_row, to_col)
+                            if game_mode == 'AI' and moved and not game.game_over and game.turn == 'b':
+                                ai_thinking = True
+                                ai_thread = threading.Thread(target=ai_move_thread, args=(ai_player, game.copy(), pygame.event))
+                                ai_thread.start()
+                    elif cmd == 'dwell':
+                        # Dwell gesture acts as select-or-confirm
+                        if game.selected_piece:
+                            to_row, to_col = row, col
+                            moved = game.move_piece(to_row, to_col)
+                            if game_mode == 'AI' and moved and not game.game_over and game.turn == 'b':
+                                ai_thinking = True
+                                ai_thread = threading.Thread(target=ai_move_thread, args=(ai_player, game.copy(), pygame.event))
+                                ai_thread.start()
+                        else:
+                            moved = game.select_piece(row, col)
+                            if game_mode == 'AI' and moved and not game.game_over and game.turn == 'b':
+                                ai_thinking = True
+                                ai_thread = threading.Thread(target=ai_move_thread, args=(ai_player, game.copy(), pygame.event))
+                                ai_thread.start()
                     elif cmd == 'cancel':
                         game.selected_piece = None
                         game.valid_moves = []

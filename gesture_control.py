@@ -65,7 +65,7 @@ class HandGestureVolumeControl:
     Optimized to run alongside other applications like the chess game.
     """
     
-    def __init__(self, camera_index: int = 0, window_name: str = "Gesture Volume Control", udp_enabled: bool = False, udp_host: str = "127.0.0.1", udp_port: int = 5006):
+    def __init__(self, camera_index: int = 0, window_name: str = "Gesture Volume Control", udp_enabled: bool = False, udp_host: str = "127.0.0.1", udp_port: int = 5006, volume_enabled: bool = False, mirror_x: bool = True, flip_y: bool = False, window_width: int = 640, window_height: int = 480):
         """
         Initialize the hand gesture volume control system.
         
@@ -120,6 +120,8 @@ class HandGestureVolumeControl:
         
         # Initialize volume control for the current OS
         self._setup_volume_control()
+        # Volume feature toggle (disable by default to avoid conflicts with chess control)
+        self.volume_enabled = volume_enabled
         
         # Gesture detection sensitivity settings
         self.closest_distance = 30    # Minimum finger distance (volume = 0%)
@@ -139,6 +141,12 @@ class HandGestureVolumeControl:
         self.frame_rate = 0
         self.last_frame_time = 0
         self.show_debug_info = True
+        # Orientation settings (so camera overlay matches Pygame board)
+        self.mirror_x = mirror_x  # Horizontal mirror (selfie view). Default True to match intuitive left/right.
+        self.flip_y = flip_y      # Vertical flip (use if camera is mounted upside-down)
+        # Window sizing
+        self.window_width = max(240, int(window_width))
+        self.window_height = max(180, int(window_height))
 
         # Gesture/command detection helpers (initialized inside constructor)
         self.last_index_pos = None
@@ -154,6 +162,8 @@ class HandGestureVolumeControl:
         self.cursor_col_f = None
         self.cursor_alpha = 0.35  # smoothing factor
         self._last_cursor_tile = None
+        self._last_cursor_time = 0.0
+        self._dwell_ms = 650  # how long to dwell before sending dwell
         # Cooldowns for non-directional commands
         self._cooldowns = {
             'select': 0.8,
@@ -162,7 +172,7 @@ class HandGestureVolumeControl:
         }
         self._last_cmd_time = {}
 
-    print(f"Hand gesture volume control initialized for {current_os}")
+        print(f"Hand gesture volume control initialized for {current_os}")
         
     def _initialize_camera(self, preferred_index: int = 0):
         """Try different camera indices to find one that works"""
@@ -290,6 +300,44 @@ class HandGestureVolumeControl:
         cv2.putText(frame, f'{int(volume_level)}%', 
                    (bar_left + bar_width + 10, bar_top + 12), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+    def _draw_board_overlay(self, frame, current_tile: Optional[Tuple[int, int]]):
+        """Draw a light 8x8 grid with a red highlight on the current cursor tile."""
+        h, w = frame.shape[:2]
+        tile_w = w // 8
+        tile_h = h // 8
+
+        # Grid lines
+        grid_color_light = (80, 80, 80)
+        for r in range(9):
+            y = int(r * tile_h)
+            cv2.line(frame, (0, y), (w, y), grid_color_light, 1)
+        for c in range(9):
+            x = int(c * tile_w)
+            cv2.line(frame, (x, 0), (x, h), grid_color_light, 1)
+
+        if current_tile is not None:
+            row, col = current_tile
+            x1, y1 = int(col * tile_w), int(row * tile_h)
+            x2, y2 = int((col + 1) * tile_w), int((row + 1) * tile_h)
+
+            # Red translucent fill
+            overlay = frame.copy()
+            cv2.rectangle(overlay, (x1, y1), (x2, y2), (20, 20, 255), thickness=-1)
+            cv2.addWeighted(overlay, 0.2, frame, 0.8, 0, frame)
+            # Solid red border
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (20, 20, 255), thickness=3)
+
+            # Draw tile label (e.g., e4)
+            try:
+                file_char = chr(97 + col)
+                rank_char = str(8 - row)
+                label = f"{file_char}{rank_char}"
+                pos = (x1 + 6, y1 + 20)
+                cv2.putText(frame, label, pos, cv2.FONT_HERSHEY_DUPLEX, 0.7, (0, 0, 0), 3)
+                cv2.putText(frame, label, pos, cv2.FONT_HERSHEY_DUPLEX, 0.7, (230, 230, 230), 1)
+            except Exception:
+                pass
     
     def _draw_finger_tracking(self, frame, distance: float, thumb_pos: Tuple[int, int], index_pos: Tuple[int, int]):
         """Draw visual feedback for finger tracking"""
@@ -320,8 +368,11 @@ class HandGestureVolumeControl:
         if not success:
             return None
         
-        # Flip horizontally so it acts like a mirror
-        frame = cv2.flip(frame, 1)
+        # Apply orientation so camera overlay matches board
+        if self.mirror_x:
+            frame = cv2.flip(frame, 1)
+        if self.flip_y:
+            frame = cv2.flip(frame, 0)
         
         # Convert BGR to RGB for MediaPipe
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -357,20 +408,19 @@ class HandGestureVolumeControl:
                 (thumb_x, thumb_y), (index_x, index_y)
             )
             
-            # Map the distance to a volume percentage
-            target_volume = np.interp(finger_distance, 
-                                    [self.closest_distance, self.farthest_distance], 
-                                    [0, 100])
-            target_volume = max(0, min(100, target_volume))  # Clamp to 0-100
-            
-            # Apply smoothing to avoid jumpy volume changes
-            self.current_volume_level = (
-                self.current_volume_level * (1 - self.smoothing_factor) + 
-                target_volume * self.smoothing_factor
-            )
-            
-            # Actually change the system volume (with throttling)
-            self._change_system_volume(self.current_volume_level)
+            # Map the distance to a volume percentage (only if enabled)
+            if self.volume_enabled:
+                target_volume = np.interp(finger_distance, 
+                                        [self.closest_distance, self.farthest_distance], 
+                                        [0, 100])
+                target_volume = max(0, min(100, target_volume))  # Clamp to 0-100
+                # Apply smoothing to avoid jumpy volume changes
+                self.current_volume_level = (
+                    self.current_volume_level * (1 - self.smoothing_factor) + 
+                    target_volume * self.smoothing_factor
+                )
+                # Actually change the system volume (with throttling)
+                self._change_system_volume(self.current_volume_level)
             
             # Draw the visual feedback
             self._draw_finger_tracking(frame, finger_distance, (thumb_x, thumb_y), (index_x, index_y))
@@ -429,9 +479,13 @@ class HandGestureVolumeControl:
                 dy = index_y - self.last_index_pos[1]
                 if abs(dx) > self.move_threshold or abs(dy) > self.move_threshold:
                     if abs(dx) > abs(dy):
-                        directional = "move_right" if dx > 0 else "move_left"
+                        steps = int(abs(dx) / max(1, self.move_threshold))
+                        steps = max(1, min(3, steps))
+                        directional = f"move_right_{steps}" if dx > 0 else f"move_left_{steps}"
                     else:
-                        directional = "move_down" if dy > 0 else "move_up"
+                        steps = int(abs(dy) / max(1, self.move_threshold))
+                        steps = max(1, min(3, steps))
+                        directional = f"move_down_{steps}" if dy > 0 else f"move_up_{steps}"
 
             # Update index position history smoothing by simple low-pass
             if self.last_index_pos is None:
@@ -457,10 +511,20 @@ class HandGestureVolumeControl:
             quant_row = int(max(0, min(7, round(self.cursor_row_f))))
             current_tile = (quant_row, quant_col)
 
+            # Draw grid overlay and highlight the current tile for user clarity
+            self._draw_board_overlay(frame, current_tile)
+
             # Send cursor tile updates when changed
+            nowt = time.time()
             if current_tile != self._last_cursor_tile:
                 self._send_udp_command(f"cursor:{quant_row},{quant_col}")
                 self._last_cursor_tile = current_tile
+                self._last_cursor_time = nowt
+            else:
+                # If dwelling on same tile with a hand in view (finger_distance>0), send a dwell
+                if finger_distance > 0 and (nowt - self._last_cursor_time) * 1000 >= self._dwell_ms:
+                    self._send_udp_command("dwell")
+                    self._last_cursor_time = nowt
 
             # Prefer directional if present
             if directional:
@@ -493,21 +557,14 @@ class HandGestureVolumeControl:
                         self.stable_gesture = None
                         self.stable_count = 0
                 else:
+                    # Send directional commands immediately
                     self._send_udp_command(gesture_to_send)
         
-        # Always draw the volume bar
-        self._draw_volume_indicator(frame, self.current_volume_level)
+        # Draw the volume bar only if feature is enabled
+        if self.volume_enabled:
+            self._draw_volume_indicator(frame, self.current_volume_level)
         
-        # Draw last recognized gesture label
-        try:
-            label = self._last_sent_command or (self.stable_gesture if self.stable_gesture else "")
-            if label:
-                cv2.putText(frame, f'Gesture: {label}', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 220, 255), 2)
-            # Show ACK briefly when received
-            if self.last_ack and time.time() - self.last_ack[1] < 1.2:
-                cv2.putText(frame, f'ACK: {self.last_ack[0]}', (10, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0,255,0), 2)
-        except Exception:
-            pass
+        # Keep UI minimal: no gesture label or ACK text
         # Calculate FPS for monitoring
         current_time = time.time()
         if self.last_frame_time > 0:
@@ -562,23 +619,18 @@ class HandGestureVolumeControl:
             print(f"Failed to send UDP command '{cmd}': {e}")
     
     def _draw_ui_text(self, frame, finger_distance: float, target_volume: float):
-        """Draw all UI text in one optimized function"""
-        text_color = (255, 255, 255)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        
+        """Draw all UI text with bold red highlight and outlines"""
+        outline = (0, 0, 0)
+        fill = (20, 20, 255)  # bright red
+        font = cv2.FONT_HERSHEY_DUPLEX
+
         if self.show_debug_info:
-            # FPS in top right
-            cv2.putText(frame, f'FPS: {int(self.frame_rate)}', 
-                       (frame.shape[1] - 80, 20), font, 0.4, text_color, 1)
-            
-            # Only show debug info if hand is detected
-            if finger_distance > 0:
-                cv2.putText(frame, f'Dist: {int(finger_distance)} | Target: {int(target_volume)}%', 
-                           (10, frame.shape[0] - 40), font, 0.4, text_color, 1)
-        
-        # Compact instructions at bottom
-        cv2.putText(frame, 'Pinch: Volume | Q:Quit | D:Debug | R:Reset', 
-                   (10, frame.shape[0] - 20), font, 0.4, text_color, 1)
+            # FPS top-right (keep)
+            pos = (frame.shape[1] - 90, 26)
+            cv2.putText(frame, f'FPS: {int(self.frame_rate)}', pos, font, 0.7, outline, 3)
+            cv2.putText(frame, f'FPS: {int(self.frame_rate)}', pos, font, 0.7, fill, 1)
+
+    # Minimal HUD: no orientation text
     
     def _handle_keyboard_input(self, key: int) -> bool:
         """Handle keyboard input, return False to quit"""
@@ -607,16 +659,24 @@ class HandGestureVolumeControl:
             self.udp_enabled = not self.udp_enabled
             print(f"UDP sending: {'ON' if self.udp_enabled else 'OFF'}")
         elif key == ord('v'):
-            # Toggle volume visual only (no system change)
-            # We can't disable the draw, but we can freeze volume updates by setting factor to 0
-            self.smoothing_factor = 0.0 if self.smoothing_factor > 0 else 0.2
-            print(f"Volume smoothing {'OFF' if self.smoothing_factor == 0 else 'ON'}")
+            # Toggle volume control feature on/off
+            self.volume_enabled = not self.volume_enabled
+            print(f"Volume control: {'ON' if self.volume_enabled else 'OFF'}")
         elif key == ord('['):
             self.move_threshold = max(10, self.move_threshold - 5)
             print(f"Move threshold: {self.move_threshold}")
         elif key == ord(']'):
             self.move_threshold = min(200, self.move_threshold + 5)
             print(f"Move threshold: {self.move_threshold}")
+        elif key == ord('m'):
+            # Toggle horizontal mirror
+            self.mirror_x = not self.mirror_x
+            print(f"MirrorX: {'ON' if self.mirror_x else 'OFF'}")
+        elif key == ord('f'):
+            # Toggle vertical flip
+            self.flip_y = not self.flip_y
+            print(f"FlipY: {'ON' if self.flip_y else 'OFF'}")
+        # Note: No runtime window resize hotkeys to avoid accidental changes
         
         return True
     
@@ -636,8 +696,13 @@ class HandGestureVolumeControl:
         # Try multiple times to create the window
         for attempt in range(3):
             try:
-                cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-                cv2.resizeWindow(self.window_name, 480, 360)
+                # Create a fixed-size window that won't auto-resize or maximize
+                cv2.namedWindow(self.window_name, cv2.WINDOW_AUTOSIZE)
+                # Enforce non-fullscreen state
+                try:
+                    cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+                except Exception:
+                    pass
                 # Move the window to a specific position so it doesn't overlap with chess
                 cv2.moveWindow(self.window_name, 100, 100)
                 window_created = True
@@ -667,7 +732,14 @@ class HandGestureVolumeControl:
             # Always try to show the window if we want visual feedback
             if create_window and window_created:
                 try:
-                    cv2.imshow(self.window_name, frame)
+                    # Always show a fixed-size frame so the window never changes size
+                    frame_to_show = cv2.resize(frame, (self.window_width, self.window_height), interpolation=cv2.INTER_LINEAR)
+                    # Re-assert non-fullscreen state to prevent accidental maximization
+                    try:
+                        cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+                    except Exception:
+                        pass
+                    cv2.imshow(self.window_name, frame_to_show)
                     key_pressed = cv2.waitKey(1) & 0xFF
                     if key_pressed != 255:  # A key was pressed
                         if not self._handle_keyboard_input(key_pressed):
@@ -677,10 +749,14 @@ class HandGestureVolumeControl:
                     print(f"Display error: {e}")
                     try:
                         cv2.destroyWindow(self.window_name)
-                        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-                        cv2.resizeWindow(self.window_name, 480, 360)
+                        cv2.namedWindow(self.window_name, cv2.WINDOW_AUTOSIZE)
+                        try:
+                            cv2.setWindowProperty(self.window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_NORMAL)
+                        except Exception:
+                            pass
                         cv2.moveWindow(self.window_name, 100, 100)
-                        cv2.imshow(self.window_name, frame)
+                        frame_to_show = cv2.resize(frame, (self.window_width, self.window_height), interpolation=cv2.INTER_LINEAR)
+                        cv2.imshow(self.window_name, frame_to_show)
                     except:
                         print("Could not recreate window, continuing without visual feedback")
                         create_window = False
@@ -759,6 +835,8 @@ def main():
     parser.add_argument("--udp-host", type=str, default="127.0.0.1", help="UDP host (default 127.0.0.1)")
     parser.add_argument("--udp-port", type=int, default=5006, help="UDP port (default 5006)")
     parser.add_argument("--no-volume", action="store_true", help="Disable volume changes (visual only)")
+    parser.add_argument("--no-mirror", action="store_true", help="Disable horizontal mirror (selfie) so left/right are not flipped")
+    parser.add_argument("--flip-vertical", action="store_true", help="Flip the camera vertically to match board orientation")
     args = parser.parse_args()
 
     print("Hand Gesture Volume Control for Chess Game")
@@ -770,7 +848,9 @@ def main():
                                                   window_name="Gesture Control",
                                                   udp_enabled=args.udp,
                                                   udp_host=args.udp_host,
-                                                  udp_port=args.udp_port)
+                                                  udp_port=args.udp_port,
+                                                  mirror_x=(not args.no_mirror),
+                                                  flip_y=args.flip_vertical)
     # If volume disabled, set smoothing to 0 so _change_system_volume throttles itself effectively
     if args.no_volume:
         gesture_controller.smoothing_factor = 0.0
